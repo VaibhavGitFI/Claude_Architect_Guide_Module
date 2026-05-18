@@ -1,0 +1,35 @@
+/*
+ * Flashcards — rapid recall drills for the most-tested facts.
+ */
+window.FLASHCARDS = [
+  { front: "What signals an agentic loop to continue iterating?", back: "stop_reason == 'tool_use' (continue); 'end_turn' means done. Never parse natural language for control flow." },
+  { front: "Optimal number of tools per agent?", back: "4–5. Beyond that, selection quality degrades. Distribute extra tools across specialized subagents." },
+  { front: "Hooks vs Prompts for business rules?", back: "Hooks = deterministic (use for critical rules like refund limits). Prompts = probabilistic (use for soft preferences only)." },
+  { front: "Valid escalation triggers?", back: "Explicit human request, policy gap, capability limit, business threshold (e.g., refund > $500). NOT sentiment or self-reported confidence." },
+  { front: "tool_use guarantees what?", back: "STRUCTURE (schema compliance) — NOT semantics. The values may still be wrong; validate them separately." },
+  { front: "Where do team coding standards live?", back: ".claude/CLAUDE.md (project-level, version-controlled)." },
+  { front: "Where do personal preferences live?", back: "~/.claude/CLAUDE.md (user-level, never shared)." },
+  { front: "CLAUDE.md precedence?", back: "Directory > Project > User (more specific overrides more general)." },
+  { front: "Skill vs Command?", back: "Skill = complex, isolated (context: fork), restricted tools. Command = simple, runs in main session." },
+  { front: ".mcp.json vs ~/.claude.json?", back: ".mcp.json = project-level (team, version-controlled). ~/.claude.json = user-level (personal). Always use ${ENV_VAR} for secrets." },
+  { front: "Built-in tools (6)?", back: "Read, Write, Edit, Bash, Grep, Glob. Write creates new files; Edit modifies existing files; Grep searches file CONTENTS; Glob matches file PATHS." },
+  { front: "How to run Claude Code in CI/CD?", back: "claude -p (non-interactive) with --output-format json (and --json-schema for enforcement)." },
+  { front: "Self-review anti-pattern?", back: "Same-session self-review = confirmation bias. Use a SEPARATE session to review generated code." },
+  { front: "Batch API benefit?", back: "50% cost savings, 24-hour window. Use for non-urgent / nightly / weekly tasks. Track requests with custom_id." },
+  { front: "Few-shot example count?", back: "2–4 examples. Same output structure across all examples. At least one edge case." },
+  { front: "Vague vs explicit prompts?", back: "'flag long functions' → bad. 'flag functions exceeding 50 lines' → good. Measurable criteria prevent alert fatigue." },
+  { front: "Validation-retry feedback?", back: "Append SPECIFIC errors (field, expected, actual). Generic 'try again' is an anti-pattern." },
+  { front: "Progressive summarization risk?", back: "Loses critical details (names, IDs, amounts) across rounds. Use immutable 'case facts' blocks at start of context." },
+  { front: "Lost in the middle effect?", back: "Information in the middle of long contexts is less recalled. Put critical info at beginning AND end." },
+  { front: "Access failure vs empty result?", back: "Access failure: isError=true (couldn't even check). Empty result: isError=false, results=[] (checked, found nothing). NEVER conflate them." },
+  { front: "Stratified metrics?", base: undefined, back: "Track accuracy per document type, not just aggregate. 95% overall can hide invoices at 70%." },
+  { front: "Information provenance fields?", back: "source, confidence (verified/extracted/inferred/estimated), timestamp, agent_id. Used to resolve subagent conflicts." },
+  { front: "Hub-and-spoke architecture?", back: "Coordinator (with Task tool) delegates to specialized subagents, each with 4–5 focused tools and isolated context." },
+  { front: "Subagent context rule?", back: "Pass ONLY context relevant to the subagent's task. Never the full coordinator history." },
+  { front: "fork_session vs --resume?", back: "fork_session = branch for exploration (main session unaffected). --resume = continue an existing session with its context." },
+  { front: "Prompt chaining vs dynamic adaptive?", back: "Prompt chaining: linear, predictable steps. Dynamic adaptive: agent picks next step based on results. Use dynamic for unpredictable tasks." },
+  { front: "Plan mode — when?", back: "Multi-file architectural changes, expensive-to-undo work. Skip plan mode for trivial single-line fixes." },
+  { front: "TDD iteration?", back: "Write failing test → implement → verify → refine while keeping tests green. Preferred refinement pattern." },
+  { front: "Structured error fields?", back: "isError, errorCategory, isRetryable, context (what was attempted + suggestion). Never return generic 'failed'." },
+  { front: "Why distribute 18 tools across subagents?", back: "Too many tools → selection quality degrades + ambiguity between similar tools. 4–5 per agent is optimal." }
+];
