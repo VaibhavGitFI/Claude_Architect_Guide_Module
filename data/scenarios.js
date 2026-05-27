@@ -1,250 +1,259 @@
 /*
- * All 6 exam scenarios. The exam randomly selects 4.
+ * Six exam-style scenarios. The real exam typically samples four of these.
+ * Updated to match the rebuilt canonical content in data/d1.js … d5.js.
+ *
+ * Accuracy fixes in this revision:
+ *   - Scenario 1, refund-limit decision: pre-execution interception / prerequisite
+ *     gate (NOT PostToolUse — PostToolUse runs after execution, too late to block).
+ *   - Scenario 6, structured-output decision: tool_choice "any" for unknown
+ *     document types (NOT forced selection of a specific tool — forced is for
+ *     mandatory FIRST steps, not for picking-the-right-schema).
+ *   - Sharpened wording to match deep-dive language across the board.
  */
 window.SCENARIOS = [
   {
     id: 1,
     title: "Customer Support Resolution Agent",
-    summary: "Design an AI-powered customer support agent that handles inquiries, resolves issues, and escalates complex cases. Tests Agent SDK usage, MCP tools, and escalation logic.",
+    summary: "Design an AI-powered customer support agent that handles inquiries, resolves issues, and escalates complex cases. Tests Agent SDK usage, MCP tools, deterministic enforcement, and escalation logic.",
     focus: [
-      "Agent SDK implementation",
-      "Escalation pattern design",
-      "Hook-based compliance enforcement",
-      "Structured error handling"
+      "Agentic loop control via stop_reason",
+      "Pre-execution hooks for deterministic enforcement",
+      "Escalation triggers (the three valid ones)",
+      "Case-facts blocks for context preservation"
     ],
     decisions: [
       {
         q: "How should the agentic loop terminate?",
-        correct: "Check stop_reason: continue on 'tool_use', exit on 'end_turn'.",
-        anti: "Parsing assistant text for 'done' or 'complete' keywords."
+        correct: "Inspect stop_reason — continue on \"tool_use\" (run tools, append results, loop), terminate on \"end_turn\".",
+        anti: "Parsing assistant text for completion phrases like \"done\" or \"complete\"; or checking response.content[0].type == \"text\"."
       },
       {
-        q: "How to enforce a $500 refund limit?",
-        correct: "PostToolUse hook that programmatically blocks refund tool calls above $500 and escalates.",
-        anti: "Adding 'never process refunds above $500' to the system prompt."
+        q: "How to enforce a £500 refund limit so it can never be exceeded?",
+        correct: "Pre-execution tool-call interception hook (a prerequisite gate) that BLOCKS process_refund when amount > £500 before the tool fires, routing those calls to a human approval workflow.",
+        anti: "A PostToolUse hook — it runs AFTER execution, so the refund has already been processed by the time the hook fires. Equally wrong: relying on \"never exceed £500\" in the system prompt."
       },
       {
         q: "When should the agent escalate to a human?",
-        correct: "Escalate on: explicit customer request, policy gaps, capability limits, business thresholds.",
-        anti: "Escalating based on negative sentiment or self-reported low confidence."
+        correct: "On the three valid triggers: explicit human request (immediate, no \"let me try first\"), policy gaps requiring human judgement, or genuine inability to make progress after attempting resolution.",
+        anti: "Escalating on negative sentiment, frustration cues, or self-reported low confidence — sentiment doesn't correlate with case complexity, and LLM confidence isn't calibrated."
       },
       {
-        q: "How to preserve customer details in long conversations?",
-        correct: "Immutable 'case facts' block at the start of context with name, account ID, order, amounts.",
-        anti: "Progressive summarization that silently loses critical specifics over multiple rounds."
+        q: "How to preserve customer details in a long, multi-turn conversation that gets summarised?",
+        correct: "A persistent case-facts block at the start of every prompt holding customer ID, order numbers, amounts, dates — never summarised, always present.",
+        anti: "Progressive summarisation that silently loses specifics (refund amount, order number, dates) round by round."
       }
     ],
     domainsTested: [
       "D1: Agentic loop control via stop_reason",
-      "D1: Hooks for deterministic business rule enforcement",
-      "D2: Structured error responses from tool failures",
-      "D5: Case facts blocks for context preservation"
+      "D1: Pre-execution hooks for deterministic enforcement (NOT PostToolUse)",
+      "D5: Escalation triggers (three valid; sentiment/confidence invalid)",
+      "D5: Case-facts blocks for context preservation"
     ],
-    strategy: "This scenario tests the intersection of agentic architecture and reliability. Focus on hook-based enforcement (not prompts) and case facts (not summarization). Every escalation question will try to trick you with sentiment-based triggers."
+    strategy: "Watch for the PostToolUse-for-blocking trap on the £500 refund question — it's the wrong direction. Pre-execution interception is the only deterministic way to block. On escalation, reject sentiment- and confidence-based triggers in favour of explicit-request / policy-gap / can't-progress."
   },
 
   {
     id: 2,
     title: "Code Generation with Claude Code",
-    summary: "Configure Claude Code for a development team workflow. Tests CLAUDE.md configuration, plan mode, slash commands, and iterative refinement strategies.",
+    summary: "Configure Claude Code for a development team's workflow. Tests CLAUDE.md hierarchy, skills vs commands, plan-vs-direct mode selection, and iterative refinement.",
     focus: [
-      "CLAUDE.md hierarchy setup",
-      "Plan mode vs direct execution",
-      "Custom slash commands and skills",
-      "TDD iteration pattern"
+      "CLAUDE.md hierarchy (user vs project vs directory; .claude/rules path-scoping)",
+      "Skills vs commands; .claude/skills/ frontmatter options",
+      "Plan mode vs direct execution (driven by ambiguity, not difficulty)",
+      "Iterative refinement: concrete examples vs interview pattern vs test-driven"
     ],
     decisions: [
       {
-        q: "Where should team coding standards go?",
-        correct: ".claude/CLAUDE.md (project-level, version-controlled, shared with team).",
-        anti: "~/.claude/CLAUDE.md (user-level, personal only) or inline code comments."
+        q: "Where should team-wide coding standards live?",
+        correct: ".claude/CLAUDE.md (or root CLAUDE.md) — project-level, version-controlled, shared via git on clone.",
+        anti: "~/.claude/CLAUDE.md (user-level, personal only — the famous \"new-team-member trap\" where new devs never receive the team conventions)."
       },
       {
-        q: "When to use plan mode vs direct execution?",
-        correct: "Plan mode for multi-file architectural changes; direct execution for simple, well-defined fixes.",
-        anti: "Always using plan mode (wasteful) or never using it (risky for complex changes)."
+        q: "When to use plan mode versus direct execution?",
+        correct: "Decide by AMBIGUITY, not difficulty. Plan mode for multi-file architectural changes, codebase exploration, or multiple valid approaches. Direct execution for well-scoped, well-understood fixes (e.g. a single-function bug with a clear stack trace).",
+        anti: "Always using plan mode (wasteful) or never using it (risky for complex changes). Don't equate \"hard\" with \"needs plan mode\" — a hard but well-defined task can still go direct."
       },
       {
-        q: "How to handle complex refactoring that needs isolation?",
-        correct: "Use a skill with context: fork and allowed-tools restrictions.",
-        anti: "Using a simple command that runs in the main session context."
+        q: "How to handle a verbose skill that would pollute the main session's context?",
+        correct: "Define it under .claude/skills/<name>/SKILL.md with `context: fork` in the frontmatter — the skill runs in an isolated sub-agent and only the summary returns to the main session.",
+        anti: "A plain `.claude/commands/<name>.md` (no frontmatter) that runs in the main session and floods context with verbose exploration output."
       },
       {
-        q: "Best iterative refinement strategy?",
-        correct: "TDD iteration: write failing test, implement, verify, refine while keeping tests green.",
-        anti: "Vague instructions like 'make it better' without concrete verification criteria."
+        q: "Best iterative refinement strategy when prose instructions yield inconsistent outputs?",
+        correct: "Provide 2–4 CONCRETE input/output examples (few-shot) that demonstrate the exact transformation; use the interview pattern instead when you're in an unfamiliar DOMAIN; escalate to test-driven iteration for complex transformations with many edge cases.",
+        anti: "More verbose prose instructions (\"be more careful\"). Prose is the source of the inconsistency — adding more of it doesn't fix interpretation drift."
       }
     ],
     domainsTested: [
-      "D3: CLAUDE.md hierarchy (user vs project vs directory)",
-      "D3: Commands vs skills (isolation and tool restriction)",
-      "D3: Plan mode for complex tasks",
-      "D4: Explicit criteria and TDD iteration for refinement"
+      "D3: CLAUDE.md hierarchy and the user-vs-project trap",
+      "D3: .claude/skills/ frontmatter (context: fork, allowed-tools, argument-hint)",
+      "D3: Plan vs direct by ambiguity, not difficulty",
+      "D3: Concrete examples vs interview pattern vs test-driven refinement"
     ],
-    strategy: "This scenario is purely about Claude Code configuration. Know the three configuration layers, when to use commands vs skills, and the TDD iteration pattern. The exam loves to test whether you put personal prefs in project config."
+    strategy: "The exam loves to test the user-vs-project trap. Memorise: team-wide → project; personal → user. For plan-vs-direct, ambiguity is the criterion (not file count, not difficulty). For inconsistent output, examples first — only escalate when you need them."
   },
 
   {
     id: 3,
     title: "Multi-Agent Research System",
-    summary: "Build a coordinator-subagent system for parallel research tasks. Tests multi-agent orchestration, context passing, error propagation, and result synthesis.",
+    summary: "Build a coordinator-subagent system for parallel research tasks. Tests hub-and-spoke orchestration, subagent context isolation, error propagation, and information provenance.",
     focus: [
-      "Hub-and-spoke architecture",
-      "Context isolation and passing",
-      "Error propagation patterns",
-      "Information provenance and synthesis"
+      "Hub-and-spoke architecture and centralised communication",
+      "Subagent context isolation",
+      "Structured error propagation (no silent suppression, no workflow termination)",
+      "Information provenance and conflict handling"
     ],
     decisions: [
       {
         q: "What architecture for parallel research tasks?",
-        correct: "Hub-and-spoke: coordinator delegates to specialized subagents with isolated contexts.",
-        anti: "Flat architecture where all agents share a global state or full conversation history."
+        correct: "Hub-and-spoke: a coordinator decomposes the task and delegates to specialised subagents; ALL inter-subagent communication flows through the coordinator.",
+        anti: "Direct subagent-to-subagent communication \"for efficiency\". It breaks observability, consistent error handling, and controlled information flow."
       },
       {
-        q: "How to pass context from coordinator to subagents?",
-        correct: "Pass ONLY the context relevant to each subagent's specific task.",
-        anti: "Sharing the full coordinator conversation history with every subagent."
+        q: "What context does each subagent see from the coordinator?",
+        correct: "Only what the coordinator explicitly puts in that subagent's prompt — passed as structured findings (claim + source URL + document + date) where relevant.",
+        anti: "The full coordinator conversation history. Subagents have fully isolated context by design — assuming inheritance produces silent failures."
       },
       {
         q: "How to handle conflicting data from different subagents?",
-        correct: "Track information provenance (source, confidence, timestamp) and resolve based on reliability.",
-        anti: "Arbitrarily choosing one result or averaging conflicting values without provenance."
+        correct: "Preserve provenance for every claim (source URL, document name, publication date). When two credible sources disagree, annotate BOTH values with attribution and dates — the difference is often a real trend, not a data-quality issue.",
+        anti: "Arbitrarily choosing the most recent (or averaging) without surfacing the conflict to the reader."
       },
       {
-        q: "How to handle subagent failures?",
-        correct: "Structured error propagation: report what was attempted, error type, distinguish access failure from empty result.",
-        anti: "Silently returning empty results for failed lookups or generic 'operation failed' errors."
+        q: "How to handle a subagent failure (e.g. timeout)?",
+        correct: "Return structured error context: failure type, what was attempted, any partial results, and alternative approaches. The coordinator then chooses to retry, try an alternative, proceed with partials (with coverage annotations), or escalate.",
+        anti: "Silent suppression (empty results marked success) or workflow termination on the first failure — both destroy recovery options."
       }
     ],
     domainsTested: [
-      "D1: Hub-and-spoke multi-agent orchestration",
-      "D1: Context isolation for subagents",
-      "D5: Information provenance tracking",
-      "D5: Error propagation and access failure vs empty result"
+      "D1: Hub-and-spoke orchestration",
+      "D1: Subagent context isolation",
+      "D5: Structured error propagation",
+      "D5: Information provenance and conflict annotation"
     ],
-    strategy: "This is the hardest scenario. It tests multi-agent patterns deeply. The key traps are: sharing full context with subagents (always wrong), silently dropping subagent failures (always wrong), and ignoring provenance when resolving conflicts."
+    strategy: "This is the hardest scenario. Three traps to watch: (1) any decision that lets subagents talk directly is wrong; (2) any \"empty results marked success\" pattern is silent suppression; (3) any single-value answer in a multi-source conflict question is wrong — annotate both with provenance."
   },
 
   {
     id: 4,
     title: "Developer Productivity with Claude",
-    summary: "Build developer tools using the Claude Agent SDK with built-in tools and MCP servers. Tests tool selection, codebase exploration, and code generation workflows.",
+    summary: "Build developer tools using the Claude Agent SDK with built-in tools and MCP servers. Tests tool selection, MCP configuration, codebase exploration, and the Edit / Read+Write fallback ordering.",
     focus: [
-      "Built-in tool selection (Read, Write, Bash, Grep, Glob)",
-      "MCP server integration",
-      "Codebase exploration strategies",
-      "Tool distribution across agents"
+      "Built-in tool selection (Read, Write, Edit, Bash, Grep, Glob)",
+      "MCP server configuration and ${ENV_VAR} secret handling",
+      "Tool distribution (4–5 per agent; scoped cross-role tools)",
+      "Edit recovery: widen anchor / replace_all before Read+Write"
     ],
     decisions: [
       {
-        q: "Agent has 18 tools and selects the wrong one. What to do?",
-        correct: "Reduce to 4-5 tools per agent, distribute the rest across specialized subagents.",
-        anti: "Making tool descriptions longer, fine-tuning the model, or switching to a larger model."
+        q: "An agent has 18 tools and selects the wrong one. What's the most effective fix?",
+        correct: "Reduce to 4–5 tools per agent scoped to its role; distribute the rest across specialised subagents; add a scoped cross-role tool only for high-frequency hot paths.",
+        anti: "Making descriptions longer in isolation, switching to a larger model, or adding a routing classifier as the FIRST response. Selection reliability degrades with toolkit size — fix the structure first."
       },
       {
-        q: "Which built-in tool for reading a config file?",
-        correct: "Read tool (purpose-built for file reading).",
-        anti: "Bash('cat config.json') — never use Bash when a dedicated tool exists."
+        q: "How to find every file that calls a deprecated function plus every test file for those callers?",
+        correct: "Grep for the function name first (content search → finds callers), then Glob for the matching test-file naming pattern (e.g. **/*.test.tsx). Grep then Glob.",
+        anti: "Glob-then-Grep — Glob can't search file CONTENTS, only paths; it cannot find function callers. Reading every file is the context-budget killer."
       },
       {
-        q: "How to configure project-level MCP servers?",
-        correct: ".mcp.json with ${ENV_VAR} for secrets, version-controlled for the team.",
-        anti: "~/.claude.json (personal only) or hardcoding API keys in config files."
+        q: "How to configure project-level MCP servers safely?",
+        correct: ".mcp.json at the repo root with ${ENV_VAR} for secrets — version-controlled for the team, each developer supplies their own credential in their environment.",
+        anti: "~/.claude.json (personal only, not shared with the team) or hardcoding the credential value in .mcp.json (leaks via git history)."
       },
       {
-        q: "Write vs Edit for modifying an existing file?",
-        correct: "Edit for targeted changes to existing files (preserves unchanged content).",
-        anti: "Write replaces the ENTIRE file — using it on existing files loses content you did not include."
+        q: "Edit fails with \"old_string matches 3 locations\" — what next?",
+        correct: "Widen old_string with surrounding context until it pins down ONE location, or use replace_all: true if every occurrence should change. Read + Write is the LAST resort.",
+        anti: "Immediately falling back to Read the whole file → Write the modified version. That burns tokens on the unchanged content and bypasses Edit's unique-match safety check."
       }
     ],
     domainsTested: [
-      "D2: Tool distribution (4-5 per agent optimal)",
-      "D2: Built-in tool selection (Read/Write/Edit/Bash/Grep/Glob)",
-      "D2: MCP server configuration and secrets management",
-      "D2: Tool description best practices"
+      "D2: Tool distribution (4–5 per agent; scoped cross-role)",
+      "D2: Grep vs Glob (content vs path search)",
+      "D2: MCP server configuration and ${ENV_VAR} secrets",
+      "D2: Edit recovery ordering — widen / replace_all / then Read+Write"
     ],
-    strategy: "This scenario is tool-focused. Memorize the 6 built-in tools and when to use each. The '18 tools' question is almost guaranteed — always distribute across subagents. Never use Bash when a built-in tool exists."
+    strategy: "Two facts that come up every time: (1) Grep is for file CONTENTS, Glob is for file PATHS — they're not interchangeable; (2) when Edit fails on non-unique match, widen the anchor or use replace_all FIRST — never default to Read + Write."
   },
 
   {
     id: 5,
     title: "Claude Code for CI/CD",
-    summary: "Integrate Claude Code into continuous integration and delivery pipelines. Tests -p flag usage, structured output, batch API, and multi-pass code review.",
+    summary: "Integrate Claude Code into continuous integration. Tests the -p flag, structured output, the Batches API trade-off, and session isolation between generator and reviewer.",
     focus: [
-      "-p flag for non-interactive mode",
-      "Structured output with --output-format json",
-      "Batch API with Message Batches",
-      "Session isolation for generator vs reviewer"
+      "The -p flag for non-interactive CI",
+      "Structured output via --output-format json (+ --json-schema)",
+      "Batches API: when 50% cost savings vs latency makes sense",
+      "Separate sessions for generator vs reviewer"
     ],
     decisions: [
       {
         q: "How to run Claude Code in a CI pipeline?",
-        correct: "Use -p flag for non-interactive mode with --output-format json for structured results.",
-        anti: "Running in interactive mode or piping commands via stdin."
+        correct: "Use `claude -p \"…\"` for non-interactive print mode — processes the prompt, writes output to stdout, exits without waiting for input.",
+        anti: "Running interactively (job hangs forever) or invented flags like --batch or CLAUDE_HEADLESS=true (those don't exist)."
       },
       {
-        q: "How to review code that Claude generated?",
-        correct: "Use a SEPARATE session for review (fresh context, no confirmation bias).",
-        anti: "Same-session self-review where the reviewer retains the generator's reasoning."
+        q: "How to review code that Claude just generated, in the same pipeline?",
+        correct: "Use a SEPARATE `claude -p` invocation for review with no shared session context — a fresh instance evaluates the code on its own merits.",
+        anti: "Same-session self-review — the reviewing session retains the generator's reasoning and tends to confirm its own decisions rather than challenge them."
       },
       {
-        q: "Nightly code audit: synchronous or batch?",
-        correct: "Message Batches API for non-urgent tasks (50% cost savings, processes within 24h).",
-        anti: "Synchronous requests for non-urgent tasks (2x the cost with no benefit)."
+        q: "Nightly code-audit report: synchronous or Batches API?",
+        correct: "Message Batches API — ~50% cost savings, latency-tolerant (the report is read the next morning). Plan around the up-to-24-hour processing window; submit ≥24h before the deadline plus a safety buffer.",
+        anti: "Synchronous calls for non-urgent latency-tolerant work (pays 2× the cost for no benefit). Equally wrong: using Batches API for blocking pre-merge checks (developers can't wait 24h to merge)."
       },
       {
-        q: "How to enforce structured output from review?",
-        correct: "--json-schema flag to enforce specific output shape for automated processing.",
-        anti: "Parsing unstructured text output from the review with regex."
+        q: "How to make automated review output reliably parseable downstream?",
+        correct: "Use --output-format json combined with --json-schema enforcing a specific shape (e.g. file, line, severity, message) so the inline-PR-comment poster can read it without guessing.",
+        anti: "Parsing free-form prose with regex; or --output-format json WITHOUT a schema (fields can drift between runs)."
       }
     ],
     domainsTested: [
-      "D3: -p flag and --output-format json for CI/CD",
-      "D3: Session isolation (generator vs reviewer)",
-      "D3: Batch API for non-urgent processing (50% savings)",
-      "D4: Structured output via schemas"
+      "D3: -p flag for non-interactive CI",
+      "D3: Independent-session review",
+      "D3: Batches API for non-blocking workloads only",
+      "D3: --output-format json + --json-schema for downstream automation"
     ],
-    strategy: "Three facts to memorize: (1) -p for non-interactive, (2) NEVER self-review in the same session, (3) Batch API for non-urgent = 50% savings. These three cover most questions in this scenario."
+    strategy: "Three highly-testable facts: (1) -p for CI (the single most directly testable D3 fact); (2) ALWAYS a separate session for review; (3) Batches API for non-blocking, NEVER for blocking pre-merge checks."
   },
 
   {
     id: 6,
     title: "Structured Data Extraction",
-    summary: "Build a structured data extraction pipeline from unstructured documents. Tests JSON schemas, tool_use, validation-retry loops, and few-shot prompting.",
+    summary: "Build a structured-data extraction pipeline from unstructured documents. Tests JSON schema design, tool_choice modes, validation-retry loops, and few-shot prompting.",
     focus: [
-      "JSON schema design for tool_use",
-      "Validation-retry loop implementation",
-      "Few-shot prompting for format consistency",
-      "Field-level confidence and human review"
+      "JSON schema design (optional/nullable; \"unclear\"/\"other\")",
+      "tool_choice modes — auto vs any vs forced",
+      "Validation-retry with specific error feedback",
+      "Few-shot prompting for format consistency"
     ],
     decisions: [
       {
-        q: "How to guarantee structured JSON output from extraction?",
-        correct: "tool_use with JSON schema + tool_choice forcing a specific tool.",
-        anti: "Prompting 'output as JSON' (not guaranteed) or post-processing with regex (fragile)."
+        q: "How to guarantee structured JSON output when the document type is UNKNOWN across multiple schemas (invoice / receipt / contract)?",
+        correct: "tool_use with all three tools registered, and `tool_choice: { type: \"any\" }` — the model MUST call a tool but picks the schema that fits the document.",
+        anti: "tool_choice \"auto\" (model may return plain text — no guarantee) or forced selection of one specific tool (every document gets processed as that one type). Forced selection is for mandatory FIRST steps, not schema picking."
       },
       {
-        q: "Does tool_use guarantee correctness?",
-        correct: "No — tool_use guarantees STRUCTURE only. Validate SEMANTICS separately with business rules.",
-        anti: "Assuming tool_use output is always correct because it matched the schema."
+        q: "The model invents plausible-looking dates and amounts when fields are missing from the source. What schema change fixes this?",
+        correct: "Make the affected fields optional and nullable (type: [\"string\", \"null\"]; omit from required); add \"unclear\"/\"other\" enum values where classification is genuinely ambiguous.",
+        anti: "Keeping all fields required and adding a prompt instruction \"do not hallucinate\". Required-field pressure causes the fabrication; remove the pressure structurally."
       },
       {
-        q: "What to do when extraction validation fails?",
-        correct: "Append SPECIFIC error details (which field, what's wrong) and retry.",
-        anti: "Generic retry: 'there were errors, try again' (no signal for what to fix)."
+        q: "What does tool_use with a JSON schema actually guarantee?",
+        correct: "STRUCTURAL conformance only — valid JSON, correct types, required fields present. SEMANTIC correctness (sums adding up, values in the right fields, not fabricated) needs separate validation + retry.",
+        anti: "Assuming output is correct because it parses. Schema-valid ≠ semantically correct."
       },
       {
-        q: "How to handle ambiguous document types?",
-        correct: "Include 'other' enum value + document_type_detail field for edge cases; use 2-4 few-shot examples covering edge cases.",
-        anti: "Rigid enum without 'other' category (forces misclassification of unexpected types)."
+        q: "Validation finds line_items summing to £450 against stated_total £500. How should the retry be constructed?",
+        correct: "Retry-with-error-feedback containing THREE pieces: the original document, the failed extraction, and the SPECIFIC validation error (\"line items sum to £450 but stated_total is £500 — likely missed a line item\").",
+        anti: "Generic \"there were errors, please try again\". With no signal, the model usually reproduces the same mistake."
       }
     ],
     domainsTested: [
-      "D4: tool_use for structured output (structure vs semantics)",
-      "D4: Validation-retry loops with specific error feedback",
-      "D4: Few-shot prompting (2-4 examples, edge case coverage)",
-      "D5: Per-document-type accuracy tracking (stratified metrics)"
+      "D4: tool_choice — \"any\" for unknown schemas, forced for mandatory first steps, auto for conversational",
+      "D4: Schema design — optional/nullable, \"unclear\"/\"other\" enums",
+      "D4: tool_use guarantees structure, not semantics",
+      "D4: Retry-with-error-feedback with specific validation context"
     ],
-    strategy: "The critical concept here is that tool_use guarantees structure, NOT semantics. Every question about extraction reliability will test this. Also know that validation retries need SPECIFIC errors, not generic messages."
+    strategy: "Two specific traps: (1) for guaranteed structured output on UNKNOWN document types, the answer is tool_choice \"any\" — not forced selection of a single tool; (2) tool_use ≠ semantic correctness — pair it with explicit validation. And always retry with the SPECIFIC error, never with \"try again\"."
   }
 ];

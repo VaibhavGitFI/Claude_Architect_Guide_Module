@@ -1,111 +1,89 @@
 # Claude Certified Architect — Exam Prep Module
 
-A complete, self-contained study and practice exam module for the **Claude Certified Architect** certification. Runs entirely in the browser — no server, no build step, no dependencies.
+A complete, self-contained study and practice-exam module for the **Claude Certified
+Architect (Foundations)** certification. The study material runs entirely in the browser
+— no server, no build step. An **optional** Gemini-powered serverless endpoint adds
+on-demand AI question generation (see `DEPLOY.md`); the app works fully without it.
 
 ---
 
 ## What's inside
 
-- **Dashboard** — Progress stats, domain mastery bars, recommended study path, domain weighting.
-- **Study Guide** — All 5 domains, 18 topics, with concepts, anti-patterns, deep dives, code, comparisons, and exam tips.
-- **Anti-Patterns Cheatsheet** — All 18 anti-patterns filterable by severity and domain.
-- **Scenarios** — Deep dive into all 6 exam scenarios (the exam picks 4 randomly).
-- **Domain Quiz** — Drill questions per domain (or mixed) with instant feedback and explanations.
-- **Mock Exam** — Timed, weighted, randomized exam with per-domain breakdown.
-- **Flashcards** — Rapid recall drills with knew/missed tracking.
+- **Dashboard** — Exam-readiness gauge (weighted by official exam weighting), per-domain
+  accuracy + coverage cards, a context-aware "next action" recommendation, and recent
+  Mock/Real exam history. All driven by your own practice, stored locally.
+- **Domains** — Deep-dive narrative for all 5 domains and 30 task statements: concepts,
+  callouts (key / watch-out / tip), code, exam-focus, and quick reference.
+- **Study Guide** — Per-topic concepts, anti-patterns, deep dives, code, comparisons,
+  and exam tips for every task statement.
+- **Anti-Patterns Cheatsheet** — 38 anti-patterns, filterable by severity and domain.
+- **Scenarios** — All 6 exam-style scenarios with correct-vs-anti decisions.
+- **Domain Quiz** — Drill one domain at a time, instant feedback with a rationale for
+  *every* option. No-repeat within your seen pool; options shuffled each attempt.
+  Optional **"✨ AI variant"** button generates a fresh scenario via Gemini.
+- **Mock Exam** — Timed, weighted cross-domain exam with a per-domain breakdown.
+- **Real Exam Simulation** — Full-length, real weighting (27/18/20/20/15), 72% pass
+  mark, results-only at the end.
+- **Flashcards** — Rapid recall drills.
 
 ---
 
-## Domains covered (with weights)
+## Domains & question bank
 
-| Domain | Weight | Topics |
-|--------|--------|--------|
-| 1. Agentic Architecture & Orchestration | ~25% | Agentic loops, multi-agent, hooks, sessions |
-| 2. Tool Design & MCP Integration | ~20% | Descriptions, errors, distribution, MCP, built-ins |
-| 3. Claude Code Configuration & Workflows | ~20% | CLAUDE.md, commands, plan mode, CI/CD |
-| 4. Prompt Engineering & Structured Output | ~20% | Criteria, few-shot, tool_use, validation |
-| 5. Context Management & Reliability | ~15% | Case facts, escalation, provenance |
+| Domain | Weight | Exam questions |
+|--------|--------|----------------|
+| 1. Agentic Architecture & Orchestration | 27% | 49 |
+| 2. Tool Design & MCP Integration | 18% | 50 |
+| 3. Claude Code Configuration & Workflows | 20% | 60 |
+| 4. Prompt Engineering & Structured Output | 20% | 60 |
+| 5. Context Management & Reliability | 15% | 60 |
+| **Total** | **100%** | **279** |
+
+Every question is scenario-based with four options and a per-option rationale (why the
+correct answer is right and why each distractor is wrong).
 
 ---
 
-## Quick start (any machine)
+## Quick start
 
-The module is just static files. Open `index.html` and you're done.
+The study app is just static files.
 
-### Option 1 — Open directly
 ```bash
-# macOS
-open index.html
-# Linux
-xdg-open index.html
-# Windows
-start index.html
-```
-
-> Some browsers restrict file:// access for inline scripts. If anything doesn't load, use Option 2.
-
-### Option 2 — Local web server (recommended)
-```bash
-# Python 3 (almost always installed)
 python3 -m http.server 8080
-# then open: http://localhost:8080
-
-# Node.js
-npx serve .
-
-# PHP
-php -S localhost:8080
+# open http://localhost:8080
 ```
+
+(Opening `index.html` directly mostly works, but a local server avoids `file://`
+restrictions on some browsers.)
+
+For the **optional Gemini AI generator** and Vercel deployment, see **`DEPLOY.md`**.
 
 ---
 
-## Deploy to the web (multi-user)
-
-This is a pure static site — drop it on any host. Each visitor's progress is saved in their own browser via `localStorage`, keyed by the username they enter at the top right.
-
-### GitHub Pages
-1. Push this folder to a GitHub repo.
-2. Settings → Pages → Branch: `main` → `/ (root)` → Save.
-3. Share the published URL.
-
-### Netlify (drag and drop)
-1. Open https://app.netlify.com/drop
-2. Drag the folder containing `index.html`.
-3. Share the published URL.
-
-### Vercel
-```bash
-npx vercel deploy --prod
-```
-
-### S3 / CloudFront / Cloudflare Pages / any static host
-Just upload all files preserving the folder structure (`index.html`, `styles.css`, `app.js`, `data/*.js`).
-
----
-
-## How to study with this module
+## How to study
 
 The recommended path (also shown on the Dashboard):
 
-1. **Read** every topic in the Study Guide. Pay extra attention to the red "Anti-Patterns to Avoid" boxes.
-2. **Quiz** per domain to verify recall — review every explanation carefully.
-3. **Walk through** all 6 Scenarios. The exam picks 4 of them.
-4. **Drill** the Anti-Patterns Cheatsheet — fastest way to eliminate distractors.
-5. **Sit** the Mock Exam (40 questions, 60 minutes, no explanations) under realistic conditions. Aim for 80%+.
+1. **Read** each Domain deep-dive and the Study Guide — focus on the red anti-pattern callouts.
+2. **Drill** each domain in the Domain Quiz; the per-option rationales reinforce the trap patterns.
+3. **Walk through** the 6 Scenarios (the real exam samples 4 of them).
+4. **Sit** a Mock Exam under time. Once consistently above 80%, take the **Real Exam
+   Simulation** (72% pass mark).
 
-Repeat the Mock Exam with different settings until you're consistently scoring 80%+ across all five domains. The exam's passing line is at 80%.
+The Dashboard's readiness gauge blends per-domain accuracy with coverage (weighted by
+exam weighting), so a high score requires both breadth and correctness.
 
 ---
 
 ## Multi-user model
 
-There is no backend. Multi-user means:
-- Each person types their **name** in the top-right field.
-- Their progress (attempts, mock history, flashcard stats) is stored under that name in their browser's `localStorage`.
-- Switching the name reloads progress for that user.
-- A "Reset" button wipes that user's progress.
+No backend. Each person types their **name** top-right; their progress (attempts, mock
+history, flashcard stats, last-active view, and the exam "seen" pool) is stored under
+that name in their browser's `localStorage`. Switching the name reloads that user's
+progress. The **Reset** button wipes that user's progress and seen pools.
 
-For a true multi-user-with-history backend, you would replace the `loadJSON`/`saveJSON` functions in `app.js` with calls to your own API. The functions are isolated in one place specifically for this.
+For a true server-backed multi-user history, replace the `loadJSON` / `saveJSON`
+functions in `app.js` with calls to your own API — they're isolated in one place for this.
 
 ---
 
@@ -114,36 +92,39 @@ For a true multi-user-with-history backend, you would replace the `loadJSON`/`sa
 ```
 Claude Architect/
 ├── index.html              # Single-page app shell
-├── styles.css              # All styling
-├── app.js                  # Navigation, quiz engine, mock exam, flashcards
-├── data/
-│   ├── content.js          # Full study guide (all 5 domains, 18 topics)
-│   ├── antipatterns.js     # 18 anti-patterns
-│   ├── scenarios.js        # 6 exam scenarios
-│   ├── questions.js        # Practice question bank (~100 Qs)
-│   └── flashcards.js       # Flashcard deck
-└── README.md               # This file
+├── styles.css              # Design-token-based styling
+├── app.js                  # Navigation, exam engine, dashboard, telemetry
+├── package.json            # Only dependency: @google/generative-ai (for the API endpoint)
+├── vercel.json             # Static hosting + security headers
+├── DEPLOY.md               # Static + Gemini deployment guide
+├── api/
+│   └── generate-questions.js   # Optional Vercel serverless endpoint (Gemini 2.0 Flash)
+└── data/
+    ├── d1.js … d5.js           # Per-domain deep-dive + study guide + flashcards
+    ├── exam-d1.js … exam-d5.js # Per-domain scenario question banks (279 total)
+    ├── antipatterns.js         # 38 anti-patterns
+    └── scenarios.js            # 6 exam scenarios
 ```
 
-Total weight: under 200KB, no external CDN calls, no fonts loaded.
+Data is loaded as plain `window.*` globals via `<script>` tags (no module system).
+`window.EXAM_BANK.D1…D5` holds the question banks; `window.DOMAIN_DEEPDIVE`,
+`window.STUDY_CONTENT`, `window.FLASHCARDS`, `window.ANTI_PATTERNS`, and
+`window.SCENARIOS` hold the rest.
 
 ---
 
 ## Customisation
 
-- **Add questions**: Append to `data/questions.js`. Each item needs `id`, `domain` (D1-D5), `topic`, `q`, `options`, `answer` (index), `explain`.
-- **Tune mock weights**: In `app.js`, search for `const weights = { D1: 0.25, ... }`.
-- **Pass threshold**: Search for `pct >= 80` in `app.js`.
-- **Theme**: All colors and spacing live in `styles.css`.
-
----
-
-## Browser support
-
-Modern browsers (Chrome, Safari, Firefox, Edge 2020+). Uses `localStorage` and standard DOM APIs only — no ES2022+ syntax, no module loading.
+- **Add questions**: append to the relevant `data/exam-d*.js` array. Each item needs
+  `id`, `source` (`"sim"`/`"extra"`/`"ai"`), `domain`, `topic`, `topicTitle`,
+  `question`, `options` (4), `answer` (0-based index), `rationales` (4).
+- **Mock/Real weighting**: `EXAM_WEIGHTS` in `app.js`.
+- **Pass mark**: `REAL_EXAM_PASS_MARK` in `app.js` (default 0.72).
+- **AI generator model**: `GEMINI_MODEL` env var (default `gemini-2.0-flash`).
+- **Theme**: CSS custom properties at the top of `styles.css`.
 
 ---
 
 ## License & disclaimer
 
-This module is independent study material. It is not endorsed by, affiliated with, or sponsored by Anthropic.
+Independent study material. Not endorsed by, affiliated with, or sponsored by Anthropic.

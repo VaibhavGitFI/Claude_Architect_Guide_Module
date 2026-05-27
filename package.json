@@ -1,0 +1,9 @@
+{
+  "name": "claude-architect-exam-prep",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Static exam prep module + optional Vercel serverless endpoint that generates fresh practice questions via Gemini.",
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0"
+  }
+}

@@ -26,11 +26,13 @@
 
 <nav class="tabs" id="tabs">
   <button data-view="dashboard"  class="tab active">Dashboard</button>
+  <button data-view="domains"    class="tab">Domains</button>
   <button data-view="study"      class="tab">Study Guide</button>
   <button data-view="antipatterns" class="tab">Anti-Patterns</button>
   <button data-view="scenarios"  class="tab">Scenarios</button>
   <button data-view="quiz"       class="tab">Domain Quiz</button>
   <button data-view="mock"       class="tab">Mock Exam</button>
+  <button data-view="realmock"   class="tab">Real Exam Simulation</button>
   <button data-view="flashcards" class="tab">Flashcards</button>
 </nav>
 
@@ -39,52 +41,68 @@
   <!-- =========== DASHBOARD =========== -->
   <section id="view-dashboard" class="view active">
     <div class="hero">
-      <h1>Master the Claude Certified Architect Exam</h1>
+      <h1>Claude Certified Architect — Exam Prep</h1>
       <p class="lead">
-        Five domains. Six scenarios. Eighteen anti-patterns. One end-to-end module covering
-        every concept from agentic loops to information provenance — with interactive quizzes,
-        explanations, and timed mock exams.
+        Five domains. 279 scenario-based practice questions with per-option rationales,
+        timed Mock and Real Exam Simulation modes with no-repeat selection, and a study guide drawn
+        from the public reference content. Your practice is tracked here.
       </p>
     </div>
 
-    <div class="grid-3">
+    <div class="stat-grid">
       <div class="card stat">
         <div class="stat-num" id="stat-questions">—</div>
-        <div class="stat-label">Practice Questions</div>
+        <div class="stat-label">Bank size</div>
       </div>
       <div class="card stat">
         <div class="stat-num" id="stat-attempted">0</div>
-        <div class="stat-label">Attempted</div>
+        <div class="stat-label">Questions answered</div>
       </div>
       <div class="card stat">
-        <div class="stat-num" id="stat-accuracy">0%</div>
-        <div class="stat-label">Accuracy</div>
+        <div class="stat-num" id="stat-accuracy">—</div>
+        <div class="stat-label">Overall accuracy</div>
+      </div>
+      <div class="card stat">
+        <div class="stat-num" id="stat-bestmock">—</div>
+        <div class="stat-label">Best mock score</div>
       </div>
     </div>
 
-    <h2>Domain Mastery</h2>
-    <div id="domainProgress" class="domain-progress"></div>
+    <div id="readinessCard" class="readiness-card r-none"></div>
 
-    <h2>Recommended Study Path</h2>
+    <div id="nextAction" class="next-action"></div>
+
+    <h2>Domain mastery</h2>
+    <div id="domainProgress" class="domain-grid"></div>
+
+    <h2>Recent exam attempts</h2>
+    <div id="recentActivity" class="recent-activity"></div>
+
+    <h2>Recommended study path</h2>
     <ol class="path">
-      <li><strong>Read</strong> each Domain in the Study Guide — focus on Anti-Patterns highlighted in red.</li>
-      <li><strong>Quiz</strong> per domain to verify recall; review explanations carefully.</li>
-      <li><strong>Walk through</strong> all 6 Scenarios — 4 of these appear on your actual exam.</li>
-      <li><strong>Drill</strong> the Anti-Patterns Cheatsheet — fastest way to eliminate distractors.</li>
-      <li><strong>Sit</strong> the Mock Exam under timed conditions. Aim for 80%+ before exam day.</li>
+      <li><strong>Read</strong> each Domain in the Study Guide — focus on the red Anti-Pattern callouts.</li>
+      <li><strong>Drill</strong> each domain in the Domain Quiz — instant per-option rationales reinforce the trap patterns.</li>
+      <li><strong>Walk through</strong> the Scenarios — 4 of these appear on the real exam.</li>
+      <li><strong>Sit</strong> a Mock Exam under time. Once consistently above 80%, take the Real Exam Simulation (72% pass mark).</li>
     </ol>
 
-    <h2>Domain Weighting</h2>
+    <h2>Domain weighting</h2>
     <table class="weights">
       <thead><tr><th>Domain</th><th>Weight</th><th>Focus</th></tr></thead>
       <tbody>
-        <tr><td>1. Agentic Architecture & Orchestration</td><td>~25%</td><td>Loops, multi-agent, hooks, sessions</td></tr>
-        <tr><td>2. Tool Design & MCP Integration</td><td>~20%</td><td>Descriptions, errors, MCP, built-ins</td></tr>
-        <tr><td>3. Claude Code Configuration & Workflows</td><td>~20%</td><td>CLAUDE.md, commands, plan mode, CI/CD</td></tr>
-        <tr><td>4. Prompt Engineering & Structured Output</td><td>~20%</td><td>Criteria, few-shot, tool_use, validation</td></tr>
-        <tr><td>5. Context Management & Reliability</td><td>~15%</td><td>Case facts, escalation, provenance</td></tr>
+        <tr><td>1. Agentic Architecture & Orchestration</td><td>27%</td><td>Loops, hub-and-spoke, hooks, sessions</td></tr>
+        <tr><td>2. Tool Design & MCP Integration</td><td>18%</td><td>Descriptions, errors, MCP, built-ins</td></tr>
+        <tr><td>3. Claude Code Configuration & Workflows</td><td>20%</td><td>CLAUDE.md, commands, plan mode, CI/CD</td></tr>
+        <tr><td>4. Prompt Engineering & Structured Output</td><td>20%</td><td>Criteria, tool_use, validation, few-shot</td></tr>
+        <tr><td>5. Context Management & Reliability</td><td>15%</td><td>Case facts, escalation, provenance</td></tr>
       </tbody>
     </table>
+  </section>
+
+  <!-- =========== DOMAINS (DEEP DIVE) =========== -->
+  <section id="view-domains" class="view">
+    <aside class="sidebar" id="domainsSidebar"></aside>
+    <article class="content domain-article" id="domainsContent"></article>
   </section>
 
   <!-- =========== STUDY GUIDE =========== -->
@@ -121,50 +139,14 @@
     <div id="scenariosList" class="scenarios-list"></div>
   </section>
 
-  <!-- =========== DOMAIN QUIZ =========== -->
-  <section id="view-quiz" class="view">
-    <h1>Domain Quiz</h1>
-    <p class="lead">Pick a domain to drill questions with instant feedback and explanations.</p>
-    <div class="domain-picker" id="domainPicker"></div>
-    <div id="quizArea" class="quiz-area"></div>
-  </section>
+  <!-- =========== DOMAIN QUIZ (scenario-based drill, untimed, instant feedback) =========== -->
+  <section id="view-quiz" class="view"></section>
 
-  <!-- =========== MOCK EXAM =========== -->
-  <section id="view-mock" class="view">
-    <div id="mockIntro">
-      <h1>Mock Exam</h1>
-      <p class="lead">
-        A randomized mock that mirrors the real exam: weighted question selection across all 5 domains,
-        a countdown timer, and a final breakdown by domain.
-      </p>
-      <div class="card config">
-        <div class="config-row">
-          <label>Number of Questions</label>
-          <select id="mockQCount">
-            <option value="20">20</option>
-            <option value="40" selected>40</option>
-            <option value="60">60</option>
-          </select>
-        </div>
-        <div class="config-row">
-          <label>Time Limit (minutes)</label>
-          <select id="mockTime">
-            <option value="30">30</option>
-            <option value="60" selected>60</option>
-            <option value="90">90</option>
-            <option value="0">No limit</option>
-          </select>
-        </div>
-        <div class="config-row">
-          <label>Show explanations after each question</label>
-          <input type="checkbox" id="mockExplain" />
-        </div>
-        <button class="btn-primary" id="startMock">Start Mock Exam</button>
-      </div>
-    </div>
-    <div id="mockRunning" class="hidden"></div>
-    <div id="mockResults" class="hidden"></div>
-  </section>
+  <!-- =========== MOCK EXAM (weighted cross-domain, timed, summary at end) =========== -->
+  <section id="view-mock" class="view"></section>
+
+  <!-- =========== REAL EXAM (full-length, real weighting, timed, pass mark) =========== -->
+  <section id="view-realmock" class="view"></section>
 
   <!-- =========== FLASHCARDS =========== -->
   <section id="view-flashcards" class="view">
@@ -195,11 +177,20 @@
 </footer>
 
 <!-- Data + App -->
-<script src="data/content.js"></script>
+<!-- Kept: anti-patterns + scenarios. Per-domain data files are rebuilt one domain at a time. -->
 <script src="data/antipatterns.js"></script>
 <script src="data/scenarios.js"></script>
-<script src="data/questions.js"></script>
-<script src="data/flashcards.js"></script>
+<script src="data/d1.js"></script>
+<script src="data/d2.js"></script>
+<script src="data/d3.js"></script>
+<script src="data/d4.js"></script>
+<script src="data/d5.js"></script>
+<!-- Exam-Sim banks (separate from per-domain study content) -->
+<script src="data/exam-d1.js"></script>
+<script src="data/exam-d2.js"></script>
+<script src="data/exam-d3.js"></script>
+<script src="data/exam-d4.js"></script>
+<script src="data/exam-d5.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

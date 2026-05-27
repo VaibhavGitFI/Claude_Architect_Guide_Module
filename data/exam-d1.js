@@ -1,0 +1,950 @@
+/*
+ * Domain 1 — Exam-Sim Bank
+ *
+ * Source: 35 scenario-based questions pasted by the user (7 task statements x 5),
+ * verbatim with per-option rationales, plus a small set of authored extras
+ * grounded in the same task-statement concepts (marked source:"extra").
+ *
+ * Populates window.EXAM_BANK.D1 — the shared, AI-ready exam engine reads from
+ * this global. Schema per question:
+ *
+ *   { id, source:"sim"|"extra", domain:"D1", topic:"d1.X", topicTitle,
+ *     question, options:[A,B,C,D], answer: 0-3 (pre-shuffle index),
+ *     rationales:[whyA, whyB, whyC, whyD] }
+ *
+ * Pre-shuffle: option indices are stable here. The runtime engine shuffles
+ * options per attempt and tracks the correct answer through the permutation.
+ */
+(function () {
+  "use strict";
+
+  window.EXAM_BANK = window.EXAM_BANK || {};
+
+  var D1 = [
+    // ====================================================================
+    // 1.1 — Agentic Loops
+    // ====================================================================
+    {
+      id: "d1.1-sim-1", source: "sim",
+      domain: "D1", topic: "d1.1", topicTitle: "Agentic Loops",
+      question: "A developer's agent sometimes terminates prematurely when Claude returns text alongside a tool call. Their loop checks `response.content[0].type == \"text\"` to determine if the agent is finished. Users report incomplete responses on complex queries. What should the developer change?",
+      options: [
+        "Add an iteration cap of 15 loops to ensure the agent runs long enough for complex queries",
+        "Check the stop_reason field instead of content type — continue when stop_reason is \"tool_use\", terminate when \"end_turn\"",
+        "Parse the assistant's text for completion phrases like \"I have finished\" before terminating the loop",
+        "Set tool_choice to \"any\" so Claude always calls a tool instead of returning text"
+      ],
+      answer: 1,
+      rationales: [
+        "Arbitrary caps do not address the root cause. The agent exits because it misidentifies the response type, not because it loops insufficient times. A cap of 15 would still terminate prematurely if the text-check bug triggers on iteration 2.",
+        "stop_reason is the deterministic, authoritative signal for loop control. It correctly distinguishes between responses where Claude wants to call more tools (tool_use) and responses where Claude has finished (end_turn), regardless of whether text content appears alongside tool calls.",
+        "Natural language parsing is ambiguous and unreliable. Claude might say it has finished one step while intending to continue with the next. The stop_reason field already provides an unambiguous signal.",
+        "This forces tool use even when the agent is genuinely finished, creating an infinite loop. The issue is not that Claude returns text — the issue is that the code misinterprets text presence as a completion signal."
+      ]
+    },
+    {
+      id: "d1.1-sim-2", source: "sim",
+      domain: "D1", topic: "d1.1", topicTitle: "Agentic Loops",
+      question: "Which of the following correctly describes the agentic loop lifecycle?",
+      options: [
+        "Send request, check if response contains text, parse text for instructions, execute any tools mentioned in text",
+        "Send request, inspect stop_reason, if \"tool_use\" execute tools and append results to history, if \"end_turn\" finish",
+        "Send request, execute all available tools in sequence, check if any returned errors, retry failed tools",
+        "Send request, count tokens in response, if tokens exceed threshold then tools are needed, otherwise finish"
+      ],
+      answer: 1,
+      rationales: [
+        "Parsing natural-language text for instructions is ambiguous. The stop_reason field, not text content, determines what happens next.",
+        "The agentic loop lifecycle follows four deterministic steps: send request via the Messages API, inspect stop_reason, execute tools and append results if tool_use, terminate if end_turn.",
+        "An agentic loop does not execute all tools in sequence. Claude selects which tool to call based on context (model-driven decision-making). Tools are not retried automatically.",
+        "Token count has no bearing on loop control. The stop_reason field is the sole authoritative signal for whether to continue or terminate."
+      ]
+    },
+    {
+      id: "d1.1-sim-3", source: "sim",
+      domain: "D1", topic: "d1.1", topicTitle: "Agentic Loops",
+      question: "An agent completes simple tasks correctly but enters an infinite loop on complex queries. The developer's fix is to add an iteration cap of 10. What is wrong with this approach?",
+      options: [
+        "The iteration cap is too low — it should be at least 50 for complex queries",
+        "Iteration caps are acceptable as a safety net but should not be the primary stopping mechanism; the developer should investigate why stop_reason is not being checked correctly",
+        "The agent needs more tools to handle complex queries, not an iteration cap",
+        "Iteration caps only work with synchronous APIs, not with streaming responses"
+      ],
+      answer: 1,
+      rationales: [
+        "Increasing the cap does not fix the root cause. If the loop is infinite because stop_reason is not being checked, no cap value solves the underlying problem — it just delays termination.",
+        "The infinite loop indicates stop_reason is not being used correctly as the primary control mechanism. A cap masks the underlying bug rather than fixing it. Caps are acceptable only as a safety net (maximum bound) to prevent runaway agents, not as primary loop control.",
+        "The number of tools is unrelated to infinite loop behaviour. The loop continues or terminates based on stop_reason, not on whether the right tools are available.",
+        "Iteration caps can apply to any execution mode. The issue is using them as primary control rather than checking stop_reason."
+      ]
+    },
+    {
+      id: "d1.1-sim-4", source: "sim",
+      domain: "D1", topic: "d1.1", topicTitle: "Agentic Loops",
+      question: "Why must tool results be appended to the conversation history before sending the next request to Claude?",
+      options: [
+        "To reduce API costs by caching previous responses",
+        "So Claude can reason about the new information from the tool on the next iteration and decide what to do next",
+        "To enable streaming of partial results to the user interface",
+        "Because the Messages API rejects requests that do not include complete conversation history"
+      ],
+      answer: 1,
+      rationales: [
+        "Appending tool results is about enabling reasoning continuity, not cost reduction. The model needs the data to think, not to save money.",
+        "The model needs to see what the tool returned in order to decide its next action. Without tool results in the conversation history, Claude cannot incorporate tool output into its reasoning chain and cannot make informed decisions about whether to call another tool or finish.",
+        "Tool result appending is about the model's reasoning chain, not about streaming partial results to users. These are separate concerns.",
+        "The API does not reject incomplete histories as a technical constraint. The issue is that without tool results, the model lacks information needed for correct reasoning."
+      ]
+    },
+    {
+      id: "d1.1-sim-5", source: "sim",
+      domain: "D1", topic: "d1.1", topicTitle: "Agentic Loops",
+      question: "A customer support agent uses model-driven decision-making to select tools. Under what circumstance should this approach be overridden with programmatic enforcement?",
+      options: [
+        "When the agent is handling more than 3 concurrent conversations",
+        "When the task requires deterministic compliance for financial, security, or regulatory operations",
+        "When the user requests a specific tool by name in their message",
+        "When the agent has access to more than 5 tools"
+      ],
+      answer: 1,
+      rationales: [
+        "The number of concurrent conversations does not determine whether to use model-driven or programmatic approaches. Enforcement type is determined by the stakes of the operation.",
+        "Model-driven decision-making is probabilistic. For operations where a single failure causes financial loss, security breach, or compliance violation, programmatic enforcement provides deterministic guarantees that override model flexibility.",
+        "User requests do not override the architectural decision between model-driven and programmatic enforcement. The stakes of the operation determine the approach.",
+        "The number of available tools is irrelevant to the enforcement decision. Whether the agent has 2 tools or 20, high-stakes operations require programmatic enforcement."
+      ]
+    },
+
+    // 1.1 authored extras (grounded in the same task statement)
+    {
+      id: "d1.1-extra-1", source: "extra",
+      domain: "D1", topic: "d1.1", topicTitle: "Agentic Loops",
+      question: "A team needs to ensure their agent always returns structured output (never plain text) so a downstream system can parse the result. A junior engineer proposes setting tool_choice to \"any\" permanently. What is the most important risk of this approach inside an agentic loop?",
+      options: [
+        "The model will return slower because tool calls cost more tokens",
+        "Forcing a tool call on every turn prevents stop_reason from ever returning \"end_turn\", so the loop cannot terminate naturally — it runs until any safety cap fires",
+        "tool_choice cannot be set programmatically; it must be configured at the account level",
+        "The Messages API will reject responses that always contain tool calls"
+      ],
+      answer: 1,
+      rationales: [
+        "Latency and token cost are secondary; the primary risk is correctness, not performance.",
+        "If the model must call a tool every turn, it never produces an end_turn stop_reason, and the loop has no natural termination point. Use \"any\" only for a single forced step (e.g. a guaranteed structured extraction), not as the steady state inside an agentic loop.",
+        "tool_choice is a runtime parameter on the Messages API and can be set per request.",
+        "The API does not reject responses based on tool-call frequency; the failure is logical, not technical."
+      ]
+    },
+    {
+      id: "d1.1-extra-2", source: "extra",
+      domain: "D1", topic: "d1.1", topicTitle: "Agentic Loops",
+      question: "An engineer is debugging an agentic loop. After Claude returns stop_reason \"tool_use\" and the code executes the requested tool, what is the minimum the code must put into the next request to keep the conversation coherent?",
+      options: [
+        "Only the new tool result — earlier history can be omitted to save tokens",
+        "The assistant message containing the tool_use block plus a user message containing the matching tool_result, both appended to the existing conversation history",
+        "Just the original user query and the latest tool result; intermediate assistant messages should be summarised first",
+        "Only the system prompt and the tool result; assistant messages should be discarded once a tool result is available"
+      ],
+      answer: 1,
+      rationales: [
+        "Omitting earlier history breaks the loop: the Messages API is stateless and Claude has no memory beyond what you resend.",
+        "Each iteration must include the full prior history plus the assistant's tool_use response and the matching tool_result user message. That is the documented loop shape and the minimum needed for Claude to reason about the new information.",
+        "Summarising intermediate assistant messages mid-loop destroys the tool_use ↔ tool_result pairing the model relies on; it is not a safe minimum.",
+        "Discarding assistant messages breaks the conversation contract — the tool_use block must remain in history so the matching tool_result is linkable."
+      ]
+    },
+
+    // ====================================================================
+    // 1.2 — Multi-Agent Orchestration
+    // ====================================================================
+    {
+      id: "d1.2-sim-1", source: "sim",
+      domain: "D1", topic: "d1.2", topicTitle: "Multi-Agent Orchestration",
+      question: "A multi-agent research system produces a report on \"renewable energy technologies\" that only covers solar and wind power. Each subagent produced thorough, well-sourced coverage of its assigned topic. The web search subagent returned relevant results for every query it received. What is the most likely root cause?",
+      options: [
+        "The web search subagent used queries that were too narrow, missing results for other energy types",
+        "The synthesis subagent failed to identify gaps in the research and request additional coverage",
+        "The coordinator decomposed the topic into only solar and wind subtopics, never assigning geothermal, tidal, biomass, or fusion to any subagent",
+        "The document analysis subagent did not have access to sources covering other renewable energy types"
+      ],
+      answer: 2,
+      rationales: [
+        "The web search subagent researched exactly what it was assigned and returned relevant results. The issue is what it was asked to search for, not how it searched.",
+        "The synthesis agent works with the research it receives. It cannot synthesise topics that were never researched. Gap identification during iterative refinement is the coordinator's responsibility.",
+        "The coordinator is responsible for task decomposition. If it only assigns solar and wind as subtopics, no downstream agent can cover the missing categories. The root cause is always the coordinator's decomposition when the output is incomplete in scope.",
+        "Source availability is not the issue. The coordinator never asked any agent to research these other energy types. Even with perfect source access, unassigned topics would remain uncovered."
+      ]
+    },
+    {
+      id: "d1.2-sim-2", source: "sim",
+      domain: "D1", topic: "d1.2", topicTitle: "Multi-Agent Orchestration",
+      question: "Which of the following is a benefit of routing ALL subagent communication through the coordinator?",
+      options: [
+        "It reduces the total number of API calls required to complete a task",
+        "It allows subagents to share memory and build on each other's findings automatically",
+        "It provides observability, consistent error handling, and controlled information flow",
+        "It enables subagents to run in parallel without coordination overhead"
+      ],
+      answer: 2,
+      rationales: [
+        "Routing through the coordinator may actually increase API calls compared to direct communication. The benefit is control and visibility, not efficiency.",
+        "Subagents do NOT share memory. Communication through the coordinator means the coordinator explicitly passes information — there is no automatic memory sharing.",
+        "Centralised communication through the coordinator provides three specific benefits: observability (log and monitor every message in one place), consistent error handling (the coordinator applies uniform recovery policies), and controlled information flow (the coordinator decides what context each subagent receives).",
+        "Parallel execution is achieved through multiple Task tool calls in a single response, not through the routing pattern. Centralised routing is about control, not parallelism."
+      ]
+    },
+    {
+      id: "d1.2-sim-3", source: "sim",
+      domain: "D1", topic: "d1.2", topicTitle: "Multi-Agent Orchestration",
+      question: "A developer proposes allowing subagents to communicate directly with each other to reduce latency. Why is this approach problematic?",
+      options: [
+        "Direct communication is not supported by the Claude API",
+        "It breaks observability, consistent error handling, and controlled information flow",
+        "Subagents cannot process messages from other subagents",
+        "It would require each subagent to have access to all other subagents' tools"
+      ],
+      answer: 1,
+      rationales: [
+        "The issue is architectural, not a technical API limitation. The pattern is wrong regardless of whether the API supports it.",
+        "Direct inter-subagent communication bypasses the coordinator, breaking the three benefits of hub-and-spoke architecture: observability (messages are no longer centrally logged), consistent error handling (no uniform recovery policies), and controlled information flow (no gatekeeper deciding what context flows where).",
+        "Subagents can process any text input. The issue is not message-processing capability but the loss of centralised control.",
+        "Tool access is a separate concern from communication routing. Direct communication does not inherently require shared tool access."
+      ]
+    },
+    {
+      id: "d1.2-sim-4", source: "sim",
+      domain: "D1", topic: "d1.2", topicTitle: "Multi-Agent Orchestration",
+      question: "A coordinator invokes a web search subagent twice for two different subtopics. The second invocation returns results that contradict the first. What explains this?",
+      options: [
+        "The web search tool has a caching bug that returns stale results",
+        "Subagents do not share memory between invocations — each invocation is independent and has no knowledge of the previous one",
+        "The coordinator passed conflicting instructions to the two invocations",
+        "The second subagent inherited stale context from the first invocation"
+      ],
+      answer: 1,
+      rationales: [
+        "The explanation lies in subagent isolation, not tool caching. Each invocation is independent by design.",
+        "Subagent isolation means each invocation is completely independent. The second invocation has no knowledge of what the first found. Contradictory results are possible because each invocation searches independently and may find different sources.",
+        "While conflicting instructions could cause different results, the question asks what explains the contradiction — subagent isolation (no shared memory) is the architectural reason.",
+        "Subagents do NOT inherit context from previous invocations. This answer contradicts the isolation principle."
+      ]
+    },
+    {
+      id: "d1.2-sim-5", source: "sim",
+      domain: "D1", topic: "d1.2", topicTitle: "Multi-Agent Orchestration",
+      question: "A multi-agent system's output consistently misses entire categories of a broad topic. A developer proposes adding three more specialist subagents to increase coverage. Will this fix the problem?",
+      options: [
+        "Yes, more subagents means more comprehensive coverage of the topic",
+        "No — if the coordinator's decomposition is too narrow, new subagents will receive equally narrow assignments; the fix is better decomposition logic",
+        "Yes, as long as the new subagents have access to different data sources",
+        "No — the fix is to allow subagents to communicate directly so they can identify gaps themselves"
+      ],
+      answer: 1,
+      rationales: [
+        "More subagents do not help if they receive narrow assignments. Coverage depends on what is assigned, not how many agents are available.",
+        "The root cause is the coordinator's task decomposition. If the coordinator only generates narrow subtopics, additional subagents receive equally narrow assignments. The fix is improving how the coordinator decomposes topics to ensure full breadth coverage.",
+        "Data source access is irrelevant when the coordinator never assigns the missing categories. The agents cannot research topics they are never asked to investigate.",
+        "Direct subagent communication breaks hub-and-spoke architecture and does not address the decomposition problem. Gap identification is the coordinator's responsibility during iterative refinement."
+      ]
+    },
+
+    // 1.2 authored extras
+    {
+      id: "d1.2-extra-1", source: "extra",
+      domain: "D1", topic: "d1.2", topicTitle: "Multi-Agent Orchestration",
+      question: "A coordinator must research a broad topic. To keep latency down, it currently delegates to web-search, document-analysis, and synthesis subagents on every query. The team notices that simple factual queries take just as long as complex ones. What is the most appropriate change?",
+      options: [
+        "Skip the coordinator and let the user's query go directly to a subagent",
+        "Have the coordinator dynamically select which subagents to invoke based on the query — a simple factual question may need only web-search, not the full pipeline",
+        "Always run all three subagents in parallel to maximise coverage",
+        "Cache prior synthesis output and return it for similar queries without invoking any subagent"
+      ],
+      answer: 1,
+      rationales: [
+        "Bypassing the coordinator breaks hub-and-spoke and removes observability and consistent error handling.",
+        "Dynamic subagent selection is one of the four coordinator responsibilities: the coordinator analyses query requirements and invokes only the subagents needed. Routing every query through the full pipeline wastes time and tokens.",
+        "Maximising coverage on every query is exactly the over-routing pattern that causes the problem. Parallelism helps when subagents are independent and necessary, not when they are unnecessary.",
+        "Caching prior synthesis without subagent involvement risks serving stale or incorrect answers; it does not address the decision of which subagents to invoke."
+      ]
+    },
+    {
+      id: "d1.2-extra-2", source: "extra",
+      domain: "D1", topic: "d1.2", topicTitle: "Multi-Agent Orchestration",
+      question: "A coordinator assigns two subagents to research the same broad topic but realises both are returning largely overlapping content. What coordinator responsibility addresses this?",
+      options: [
+        "Research scope partitioning — assigning distinct subtopics or source types to each agent to minimise duplication",
+        "Iterative refinement loops — re-invoking subagents on gaps",
+        "Centralised communication routing — funnelling all subagent traffic through the hub",
+        "Dynamic subagent selection — choosing which subagents to invoke per query"
+      ],
+      answer: 0,
+      rationales: [
+        "Research scope partitioning is the coordinator's lever for duplication: split the topic into distinct subtopics (or assign distinct source types such as academic vs news) so the subagents complement rather than overlap each other.",
+        "Iterative refinement targets gaps after synthesis, not duplication during initial assignment.",
+        "Centralised routing controls observability and information flow but does not, by itself, prevent two subagents being given overlapping tasks.",
+        "Dynamic selection decides which subagents to invoke, but the duplication problem here is about how the work is partitioned among the chosen agents."
+      ]
+    },
+
+    // ====================================================================
+    // 1.3 — Subagent Invocation & Context Passing
+    // ====================================================================
+    {
+      id: "d1.3-sim-1", source: "sim",
+      domain: "D1", topic: "d1.3", topicTitle: "Subagent Invocation & Context Passing",
+      question: "A synthesis agent produces a report where several claims have no source attribution. The web search subagent correctly returns results with URLs, titles, and snippets. The document analysis subagent correctly returns analysis with page references. Both subagents are verified to be working properly. What is the most likely root cause?",
+      options: [
+        "The synthesis agent's system prompt does not include instructions to cite sources",
+        "The coordinator passes content to the synthesis agent without structured metadata — source URLs, document names, and page numbers are not included",
+        "The web search subagent needs to return results in a different format that the synthesis agent can parse",
+        "The synthesis agent should be given direct access to the web search tool so it can verify sources itself"
+      ],
+      answer: 1,
+      rationales: [
+        "Even with citation instructions, the synthesis agent cannot cite sources it was never given. If the coordinator strips metadata before passing content, no prompt instruction can recover the missing information.",
+        "Context passing must include structured data that separates content from metadata. Without source URLs and document names in the data passed to the synthesis agent, it has no attribution information to include regardless of its instructions.",
+        "The web search subagent is returning well-structured results. The issue is not the source format — it is that the coordinator does not pass the metadata through to the synthesis agent.",
+        "Giving the synthesis agent web search tools violates the principle of scoped tool access and breaks the hub-and-spoke architecture. The fix is proper context passing, not giving agents tools outside their role."
+      ]
+    },
+    {
+      id: "d1.3-sim-2", source: "sim",
+      domain: "D1", topic: "d1.3", topicTitle: "Subagent Invocation & Context Passing",
+      question: "A coordinator needs to spawn a web search subagent and a document analysis subagent for independent research tasks. What is the most efficient spawning approach?",
+      options: [
+        "Invoke the web search subagent first, wait for results, then invoke the document analysis subagent",
+        "Emit multiple Task tool calls in a single coordinator response to spawn both subagents in parallel",
+        "Create a shared message queue that both subagents can read from simultaneously",
+        "Invoke both subagents with identical prompts so they can cross-verify each other's results"
+      ],
+      answer: 1,
+      rationales: [
+        "Sequential invocation introduces unnecessary latency when the tasks are independent. Neither subagent needs the other's results to begin its work.",
+        "Emitting multiple Task tool calls in a single coordinator response spawns independent subagents simultaneously, reducing latency compared to sequential invocation across separate turns.",
+        "Shared message queues break the hub-and-spoke architecture. All communication must flow through the coordinator, not through shared infrastructure.",
+        "Identical prompts waste resources and do not address the latency issue. Each subagent should receive a prompt tailored to its specific role and subtopic."
+      ]
+    },
+    {
+      id: "d1.3-sim-3", source: "sim",
+      domain: "D1", topic: "d1.3", topicTitle: "Subagent Invocation & Context Passing",
+      question: "A coordinator's allowedTools list contains [\"web_search\", \"read_file\"] but does NOT include \"Task\". What happens when the coordinator tries to spawn a subagent?",
+      options: [
+        "The coordinator spawns the subagent but with reduced capabilities",
+        "The coordinator cannot spawn any subagents — Task must be in allowedTools",
+        "The coordinator automatically falls back to calling the subagent's tools directly",
+        "The coordinator spawns the subagent but it inherits the coordinator's tools instead of its own"
+      ],
+      answer: 1,
+      rationales: [
+        "Without Task, no subagent is spawned at all — it is not a degraded mode, it is a complete inability to invoke subagents.",
+        "Task is the hard gate for subagent spawning. Without Task in allowedTools, the coordinator physically cannot invoke any subagent. There is no fallback or workaround. (Note: the tool was renamed Agent in SDK v2.1.63 with Task as a backward-compatible alias.)",
+        "There is no automatic fallback. The coordinator can only use the tools in its allowedTools list. Without Task, it has no mechanism for subagent invocation.",
+        "No subagent is created. The Task tool is required to spawn any subagent; tool inheritance is not relevant when spawning itself is impossible."
+      ]
+    },
+    {
+      id: "d1.3-sim-4", source: "sim",
+      domain: "D1", topic: "d1.3", topicTitle: "Subagent Invocation & Context Passing",
+      question: "A developer uses fork_session after analysing a codebase to explore two different refactoring strategies. Which statement correctly describes how forks behave?",
+      options: [
+        "Both forks share memory and can see each other's results in real time",
+        "Each fork operates independently after the branching point — changes in one fork do not affect the other",
+        "The second fork automatically receives a summary of the first fork's findings",
+        "Forks are identical to --resume sessions and can be used interchangeably"
+      ],
+      answer: 1,
+      rationales: [
+        "Forks are explicitly isolated. They share the baseline context up to the branching point but are completely independent afterward. No shared memory exists.",
+        "fork_session creates independent branches from a shared analysis baseline. After the fork, each branch operates independently. They do not see each other's results and changes in one do not affect the other.",
+        "Forks are independent. The second fork has no knowledge of the first fork's activity after the branching point.",
+        "fork_session and --resume serve entirely different purposes. Fork creates divergent branches for exploring alternatives. Resume continues the same conversation."
+      ]
+    },
+    {
+      id: "d1.3-sim-5", source: "sim",
+      domain: "D1", topic: "d1.3", topicTitle: "Subagent Invocation & Context Passing",
+      question: "When designing a coordinator prompt for subagents, which approach leads to better subagent performance?",
+      options: [
+        "Provide detailed step-by-step procedural instructions for how the subagent should complete the task",
+        "Specify research goals and quality criteria, allowing the subagent to adapt its approach",
+        "Include the coordinator's full conversation history so the subagent has maximum context",
+        "Keep the prompt minimal to avoid overwhelming the subagent with information"
+      ],
+      answer: 1,
+      rationales: [
+        "Procedural instructions constrain subagents and prevent them from adjusting their approach. If the subagent encounters an unexpected situation, rigid procedures may lead to poor results.",
+        "Goal-oriented prompts enable subagent adaptability. Specifying what to achieve and what quality criteria to meet allows subagents to adjust their approach when they encounter unexpected situations.",
+        "Subagents have isolated context by design. Including the full conversation history is wasteful and may confuse the subagent with irrelevant information. Pass only the specific context needed for the task.",
+        "Minimal prompts may lack the context needed for the subagent to produce quality results. The prompt should include the specific goal, quality criteria, relevant findings from prior agents, and the expected output format."
+      ]
+    },
+
+    // 1.3 authored extras
+    {
+      id: "d1.3-extra-1", source: "extra",
+      domain: "D1", topic: "d1.3", topicTitle: "Subagent Invocation & Context Passing",
+      question: "A team is unsure whether to fork the current session or start a fresh one with an injected summary, after editing several files since the previous analysis. Which guidance is correct?",
+      options: [
+        "fork_session is preferred because it preserves the prior analysis exactly",
+        "fork_session inherits the prior session's stale tool results; for stale data after file edits, start a fresh session and inject a structured summary of prior findings with the list of changed files",
+        "Either approach is equivalent — the model re-reads files on demand in both cases",
+        "fork_session is required whenever you intend to compare alternatives, including the case of stale files"
+      ],
+      answer: 1,
+      rationales: [
+        "Fork preserves the prior state, including stale tool results showing pre-edit file contents. That is precisely the problem.",
+        "Fork inherits the entire prior conversation including stale tool results that no longer match the on-disk files; a fresh session with an injected summary and the list of changed files gives the clean baseline plus targeted re-analysis the situation needs.",
+        "The two approaches are not equivalent. Resume/fork keeps the old contents in history alongside any re-reads; a fresh session does not.",
+        "Fork is for divergent exploration from a shared analysis baseline — comparing two refactoring strategies, for example. It is the wrong tool when the underlying files have changed."
+      ]
+    },
+    {
+      id: "d1.3-extra-2", source: "extra",
+      domain: "D1", topic: "d1.3", topicTitle: "Subagent Invocation & Context Passing",
+      question: "Which is NOT a recommended rule for effective context passing between a coordinator and its subagents?",
+      options: [
+        "Include complete findings from prior agents in full, not summarised away",
+        "Use structured formats that separate content from metadata (e.g. claim + source URL + page number)",
+        "Specify goals and quality criteria, not step-by-step procedures",
+        "Forward the coordinator's full conversation history to every subagent so they have maximum context"
+      ],
+      answer: 3,
+      rationales: [
+        "This is a recommended rule: subagents cannot \"look up\" prior results — pass the findings in full.",
+        "This is a recommended rule: separating content from metadata is what makes citations and downstream traceability possible.",
+        "This is a recommended rule: goal-oriented prompts let subagents adapt when they hit unexpected situations.",
+        "Forwarding the coordinator's full history is the anti-pattern. Subagents have isolated context by design; the coordinator should pass only the specific information the subagent needs for its task."
+      ]
+    },
+
+    // ====================================================================
+    // 1.4 — Workflow Enforcement & Handoff
+    // ====================================================================
+    {
+      id: "d1.4-sim-1", source: "sim",
+      domain: "D1", topic: "d1.4", topicTitle: "Workflow Enforcement & Handoff",
+      question: "Production data reveals that in 8% of cases, a customer support agent processes refunds without verifying account ownership, occasionally leading to refunds on wrong accounts. The system prompt clearly states \"always verify customer identity before processing refunds.\" What is the most appropriate fix?",
+      options: [
+        "Implement a programmatic prerequisite gate that blocks process_refund until get_customer has returned a verified customer ID",
+        "Add stronger instructions to the system prompt emphasising the critical importance of verification before any refund processing",
+        "Add few-shot examples demonstrating the correct verification-then-refund workflow sequence",
+        "Implement a routing classifier that sends all refund requests to a specialised verification-first pipeline"
+      ],
+      answer: 0,
+      rationales: [
+        "Financial operations require deterministic enforcement. A prerequisite gate physically prevents the refund tool from executing until identity verification is complete, eliminating the 8% failure rate entirely. This is the only option that provides a 100% guarantee.",
+        "The current prompt already instructs verification but fails 8% of the time. Enhanced prompts may reduce the rate to 3–4% but cannot eliminate it. Financial operations require deterministic guarantees, not probabilistic improvements.",
+        "Few-shot examples improve consistency but still produce a non-zero failure rate. For financial operations where a single failure means a refund to the wrong account, probabilistic improvements are insufficient.",
+        "A routing classifier handles how requests reach agents, not how agents execute their internal workflow. The issue is that the agent sometimes skips verification within its own execution, which requires a per-agent enforcement mechanism."
+      ]
+    },
+    {
+      id: "d1.4-sim-2", source: "sim",
+      domain: "D1", topic: "d1.4", topicTitle: "Workflow Enforcement & Handoff",
+      question: "When an agent escalates to a human agent, the handoff summary must include specific fields because:",
+      options: [
+        "The human agent prefers structured data over conversational summaries",
+        "The human agent does NOT have access to the conversation transcript and needs a self-contained summary",
+        "Structured handoffs are required by the Claude API specification",
+        "The monitoring system requires specific fields for compliance tracking"
+      ],
+      answer: 1,
+      rationales: [
+        "This is not about preference — it is about the human agent literally not having access to the prior conversation.",
+        "The critical constraint is that human agents cannot scroll through the chat history. The handoff summary is the only information they receive. Without a complete, self-contained summary (customer ID, conversation summary, root cause analysis, refund amount, recommended action), the human agent must ask the customer to repeat everything.",
+        "Handoff format is not an API specification requirement. It is an architectural design decision based on the reality that human agents lack conversation access.",
+        "While monitoring may benefit from structured data, the primary reason is the human agent's inability to access the conversation transcript."
+      ]
+    },
+    {
+      id: "d1.4-sim-3", source: "sim",
+      domain: "D1", topic: "d1.4", topicTitle: "Workflow Enforcement & Handoff",
+      question: "A compliance team requires that a certain workflow step occurs 100% of the time before a financial operation. Which approach provides this guarantee?",
+      options: [
+        "Including the requirement in the system prompt with bold formatting and repeated emphasis",
+        "Using few-shot examples that demonstrate the correct sequence in 10 different scenarios",
+        "Implementing a hook or prerequisite gate that programmatically blocks the operation until the step completes",
+        "Adding a separate validation agent that checks compliance before forwarding to the financial agent"
+      ],
+      answer: 2,
+      rationales: [
+        "Prompt instructions, regardless of formatting or emphasis, are probabilistic. They improve the rate but cannot guarantee 100% compliance. A single failure in a financial operation has real consequences.",
+        "Few-shot examples improve accuracy but remain probabilistic. Ten examples may achieve 98% compliance, but 100% requires deterministic mechanisms.",
+        "Hooks and prerequisite gates provide deterministic enforcement. The operation physically cannot execute until the prerequisite completes. This is the only mechanism that guarantees 100% compliance.",
+        "A validation agent is itself probabilistic — it might occasionally fail to catch violations. A programmatic gate is the only deterministic guarantee."
+      ]
+    },
+    {
+      id: "d1.4-sim-4", source: "sim",
+      domain: "D1", topic: "d1.4", topicTitle: "Workflow Enforcement & Handoff",
+      question: "A customer submits a request with three concerns: return an order, dispute a charge, and update their address. How should the agent handle this?",
+      options: [
+        "Address the most urgent concern first and ask the customer to call back for the other two",
+        "Decompose into three distinct items, investigate each in parallel using shared context, and synthesise a unified resolution",
+        "Handle each concern in a separate conversation to avoid confusion",
+        "Forward all three concerns to a human agent because compound requests are too complex"
+      ],
+      answer: 1,
+      rationales: [
+        "It fails to resolve all concerns and creates a poor customer experience by requiring the customer to call back.",
+        "Multi-concern requests should be decomposed into distinct items, investigated in parallel using shared context (the customer's account information is relevant to all three), and synthesised into a single response addressing all concerns.",
+        "Separate conversations lose shared context (the customer's account information) and force the customer through multiple interaction cycles.",
+        "Compound requests are a normal part of customer support. Escalating all of them to humans defeats the purpose of the agent."
+      ]
+    },
+    {
+      id: "d1.4-sim-5", source: "sim",
+      domain: "D1", topic: "d1.4", topicTitle: "Workflow Enforcement & Handoff",
+      question: "For which of the following scenarios is prompt-based guidance (rather than programmatic enforcement) an acceptable approach?",
+      options: [
+        "Ensuring refunds are processed only after identity verification",
+        "Requiring anti-money laundering checks before international transfers",
+        "Formatting agent responses in markdown with headers and bullet points",
+        "Blocking account deletions without manager approval"
+      ],
+      answer: 2,
+      rationales: [
+        "Refund processing without verification is a financial risk. Programmatic enforcement is required for financial operations.",
+        "AML checks are a regulatory requirement. A single missed check can result in legal penalties. Deterministic enforcement via hooks is required.",
+        "Formatting preferences are low-stakes. An occasional plain-text response instead of markdown is not a business risk. Prompt-based guidance is sufficient for style and formatting requirements.",
+        "Account deletion is a high-stakes, irreversible operation. Programmatic enforcement (requiring manager approval token) is required to guarantee the approval step."
+      ]
+    },
+
+    // 1.4 authored extras
+    {
+      id: "d1.4-extra-1", source: "extra",
+      domain: "D1", topic: "d1.4", topicTitle: "Workflow Enforcement & Handoff",
+      question: "A team is designing handoff to a human. The agent currently sends \"Customer wants help with their refund\" as the summary. Which set of fields would make the handoff self-contained and meet the documented standard?",
+      options: [
+        "Customer ID; conversation summary; root-cause analysis; refund amount (if applicable); recommended action",
+        "Just the customer's latest message and the agent's last response",
+        "The full transcript of the conversation, copy-pasted",
+        "Only the recommended action — the human will decide what context they need"
+      ],
+      answer: 0,
+      rationales: [
+        "These five fields make the handoff self-contained: who the customer is, what happened, why, the relevant amount, and what to do next. They are the documented minimum because the human agent has no access to the prior conversation.",
+        "Just the latest message strips out everything the human needs (history, root cause, the specific amount).",
+        "Copy-pasting the transcript pushes the parsing burden onto the human and is not a structured handoff; it also often loses key facts hidden inside tool results.",
+        "Recommended action alone is unactionable without the supporting context (customer, summary, root cause, amount)."
+      ]
+    },
+    {
+      id: "d1.4-extra-2", source: "extra",
+      domain: "D1", topic: "d1.4", topicTitle: "Workflow Enforcement & Handoff",
+      question: "Which scenario most clearly justifies prompt-based guidance over a programmatic gate?",
+      options: [
+        "Blocking a wire transfer above £10,000 without dual approval",
+        "Ensuring KYC verification before opening a new account",
+        "Encouraging the agent to greet the user politely at the start of a conversation",
+        "Ensuring a refund cannot exceed the original payment amount"
+      ],
+      answer: 2,
+      rationales: [
+        "Wire-transfer thresholds are financial and a single failure has real cost — programmatic enforcement is required.",
+        "KYC is a regulatory requirement; missing a single check carries legal risk and demands deterministic enforcement.",
+        "A polite greeting is a low-stakes style preference. An occasional missed greeting is not a business risk, so prompt-based guidance is appropriate.",
+        "Refund-cap enforcement is financial and must be deterministic; a gate or hook is appropriate."
+      ]
+    },
+
+    // ====================================================================
+    // 1.5 — Agent SDK Hooks
+    // ====================================================================
+    {
+      id: "d1.5-sim-1", source: "sim",
+      domain: "D1", topic: "d1.5", topicTitle: "Agent SDK Hooks",
+      question: "An agent occasionally processes international transfers without required compliance checks. The compliance team requires 100% enforcement of anti-money laundering (AML) checks before any international transfer is executed. The current system uses prompt instructions that work approximately 95% of the time. What is the correct approach?",
+      options: [
+        "Add detailed AML check instructions to the system prompt with examples of correct behaviour and explicit warnings about penalties for non-compliance",
+        "Implement a tool call interception hook that blocks the transfer_funds tool from executing until aml_check returns a verified pass result",
+        "Add a PostToolUse hook that flags completed transfers that skipped AML checks for manual review",
+        "Train the agent with few-shot examples demonstrating the correct AML verification workflow before every transfer"
+      ],
+      answer: 1,
+      rationales: [
+        "Enhanced prompt instructions may improve the rate from 95% to 97–98% but cannot reach 100%. With AML regulations, even a single missed check can result in significant legal penalties. Probabilistic improvement is insufficient.",
+        "A tool call interception hook intercepts the outgoing tool call before execution and physically blocks it until the AML check passes. This provides the deterministic 100% guarantee that regulatory compliance demands. No transfer can execute without verification.",
+        "PostToolUse hooks run after execution. By the time the hook detects the missing AML check, the non-compliant transfer has already been processed. Regulatory compliance requires prevention, not post-hoc detection.",
+        "Few-shot examples improve accuracy but remain probabilistic. They cannot guarantee 100% compliance. Regulatory requirements demand deterministic enforcement."
+      ]
+    },
+    {
+      id: "d1.5-sim-2", source: "sim",
+      domain: "D1", topic: "d1.5", topicTitle: "Agent SDK Hooks",
+      question: "A customer support agent uses three MCP tools that return dates in different formats: Unix timestamps (1710489600), ISO 8601 strings (\"2024-03-15T12:00:00Z\"), and DD/MM/YYYY format (\"15/03/2024\"). The model sometimes confuses day/month order. What is the best solution?",
+      options: [
+        "Add instructions to the system prompt explaining the three date formats and how to interpret each one",
+        "Implement a PostToolUse hook that normalises all date formats to ISO 8601 before the model processes them",
+        "Implement a tool call interception hook that converts dates before sending them to the tools",
+        "Use only one MCP tool to avoid format inconsistency"
+      ],
+      answer: 1,
+      rationales: [
+        "Relying on the model to correctly interpret three different date formats on every iteration introduces inconsistency. The model may correctly parse a format once and misinterpret it the next time.",
+        "PostToolUse hooks intercept tool results after execution but before the model processes them. Normalising all dates to ISO 8601 at this point ensures the model always receives consistent data regardless of which tool produced it.",
+        "Tool call interception hooks run before tool execution. Dates are in the tool results (after execution), not in the tool calls (before execution). The hook direction is wrong for this use case.",
+        "Restricting to one tool limits functionality. The correct approach is to normalise heterogeneous outputs, not to avoid using multiple tools."
+      ]
+    },
+    {
+      id: "d1.5-sim-3", source: "sim",
+      domain: "D1", topic: "d1.5", topicTitle: "Agent SDK Hooks",
+      question: "Which statement correctly describes the difference between PostToolUse hooks and tool call interception hooks?",
+      options: [
+        "PostToolUse hooks run before tool execution; tool call interception hooks run after",
+        "PostToolUse hooks transform results after execution; tool call interception hooks block or modify calls before execution",
+        "Both types run at the same point but PostToolUse handles data while interception handles errors",
+        "PostToolUse hooks only work with MCP tools; tool call interception works with all tool types"
+      ],
+      answer: 1,
+      rationales: [
+        "This reverses the direction. PostToolUse is after execution, not before. Tool call interception is before execution, not after.",
+        "PostToolUse hooks run after a tool executes but before the model processes the result (correct for data normalisation). Tool call interception hooks run before a tool executes (correct for policy enforcement and blocking actions).",
+        "The hooks run at different points in the lifecycle, not the same point. Their timing is the fundamental distinction.",
+        "Both hook types can work with any tool type. The distinction is timing (before vs after execution), not tool compatibility."
+      ]
+    },
+    {
+      id: "d1.5-sim-4", source: "sim",
+      domain: "D1", topic: "d1.5", topicTitle: "Agent SDK Hooks",
+      question: "A developer implements a PostToolUse hook to block refunds above $500. Why is this approach flawed?",
+      options: [
+        "PostToolUse hooks cannot access the refund amount parameter",
+        "PostToolUse hooks run after the tool has already executed — the refund is already processed by the time the hook fires",
+        "PostToolUse hooks are only available in the paid tier of the Agent SDK",
+        "PostToolUse hooks can only transform data, not block operations"
+      ],
+      answer: 1,
+      rationales: [
+        "PostToolUse hooks can access the full tool result, including parameters. The issue is timing, not data access.",
+        "PostToolUse hooks run after tool execution. By the time the hook fires, the process_refund tool has already executed and the refund has been processed. For blocking actions, you need a tool call interception hook that intercepts before execution.",
+        "This is not a pricing tier limitation. The issue is that PostToolUse hooks fundamentally run too late to prevent an action.",
+        "While PostToolUse hooks are typically used for transformation, the core issue is that they run after execution. Even if they could block, the action has already occurred."
+      ]
+    },
+    {
+      id: "d1.5-sim-5", source: "sim",
+      domain: "D1", topic: "d1.5", topicTitle: "Agent SDK Hooks",
+      question: "When should you use hooks instead of prompt instructions for enforcing a business rule?",
+      options: [
+        "When the rule is complex and requires multiple steps to verify",
+        "When the rule involves formatting preferences or output style guidelines",
+        "When a single violation would cause financial loss, legal risk, or security breach",
+        "When the agent has access to more than 5 tools"
+      ],
+      answer: 2,
+      rationales: [
+        "Complexity of the rule does not determine the mechanism. Simple rules (block refunds above $500) may require hooks due to financial risk, while complex rules (follow a specific formatting convention) may only need prompts.",
+        "Formatting preferences are explicitly low-stakes and appropriate for prompt-based guidance. Hooks would be unnecessary overhead.",
+        "The decision framework is based on consequences. Hooks provide deterministic guarantees (100% enforcement). Prompts provide probabilistic guidance. If a single failure would cause financial loss, legal risk, or security breach, only hooks provide the required level of assurance.",
+        "The number of tools is irrelevant to the hooks vs prompts decision. The consequence of a single violation is the deciding factor."
+      ]
+    },
+
+    // 1.5 authored extras
+    {
+      id: "d1.5-extra-1", source: "extra",
+      domain: "D1", topic: "d1.5", topicTitle: "Agent SDK Hooks",
+      question: "A subagent must enforce its own per-call policy: it may not call `delete_record` unless a prior approval token is present. Which of the following is the most appropriate place to enforce this?",
+      options: [
+        "A scoped PreToolUse hook defined in the subagent's own AgentDefinition frontmatter — it only fires for tool calls made by that subagent",
+        "The coordinator's system prompt instructing the subagent to never call `delete_record` without approval",
+        "A PostToolUse hook on the coordinator that fires after delete_record has executed",
+        "A new safety subagent that the coordinator must consult before every delete"
+      ],
+      answer: 0,
+      rationales: [
+        "Subagent-scoped PreToolUse hooks defined in the subagent's AgentDefinition fire only on that subagent's tool calls — exactly the right boundary for per-subagent policy enforcement, before the action happens.",
+        "A prompt instruction is probabilistic; high-stakes actions like deletes need deterministic enforcement.",
+        "PostToolUse runs after the delete has already executed — too late to prevent the unauthorised action.",
+        "Inserting another subagent in front of every delete adds round-trips and still relies on the coordinator/subagent prompt; a scoped pre-execution hook is the proportionate, deterministic fix."
+      ]
+    },
+    {
+      id: "d1.5-extra-2", source: "extra",
+      domain: "D1", topic: "d1.5", topicTitle: "Agent SDK Hooks",
+      question: "A team wants visibility into when subagents are spawned and when they finish, including the inputs they were given. Which hooks are most appropriate?",
+      options: [
+        "SubagentStart (on spawn) and SubagentStop (on completion)",
+        "PreToolUse and PostToolUse on the coordinator only",
+        "A custom log-only tool that subagents must invoke first",
+        "PostToolUse only — start events are not observable"
+      ],
+      answer: 0,
+      rationales: [
+        "SubagentStart and SubagentStop are the documented lifecycle events for subagent management: log/validate/rate-limit on start, validate/transform/log on completion. Subagent Stop hooks defined in subagent frontmatter also auto-convert to SubagentStop at runtime.",
+        "PreToolUse/PostToolUse around the coordinator's Task call would observe the spawn but does not give you the subagent-lifecycle semantics SubagentStart/Stop provide.",
+        "Adding a mandatory log-only tool relies on the model to call it, which is probabilistic; lifecycle hooks fire deterministically.",
+        "Start events are observable via SubagentStart — they are first-class lifecycle events, not implicit."
+      ]
+    },
+
+    // ====================================================================
+    // 1.6 — Task Decomposition Strategies
+    // ====================================================================
+    {
+      id: "d1.6-sim-1", source: "sim",
+      domain: "D1", topic: "d1.6", topicTitle: "Task Decomposition Strategies",
+      question: "A code review agent processes 14 files and produces detailed feedback for the first 5 files but misses obvious bugs in files 10-14. It also flags a forEach loop as inefficient in one file while approving identical code in another. What is the root cause and the most appropriate solution?",
+      options: [
+        "The model's context window is too small to hold all 14 files — upgrade to a model with a larger context window",
+        "Split the review into per-file local analysis passes plus a separate cross-file integration pass to avoid attention dilution",
+        "Add a stronger system prompt emphasising the importance of reviewing all files with equal thoroughness",
+        "Reduce the number of files per review to 5 and process in sequential batches of 5 files each"
+      ],
+      answer: 1,
+      rationales: [
+        "Context window size is not the issue. Attention dilution occurs because processing too many items in a single pass produces inconsistent depth, regardless of how much context the model can hold.",
+        "Multi-pass architecture solves attention dilution. Per-file passes ensure each file receives dedicated, consistent analysis. The cross-file integration pass catches data flow issues and pattern inconsistencies. This addresses both symptoms: missed bugs in later files and contradictory pattern evaluation.",
+        "Prompt improvements do not solve attention dilution. The fundamental issue is processing too many items in a single pass, which is an architectural problem requiring a structural solution.",
+        "Batching solves within-batch attention dilution but misses cross-batch issues. Without a separate cross-file integration pass, data flow issues between batches and pattern consistency across all 14 files are not addressed."
+      ]
+    },
+    {
+      id: "d1.6-sim-2", source: "sim",
+      domain: "D1", topic: "d1.6", topicTitle: "Task Decomposition Strategies",
+      question: "A team needs to add tests to a legacy codebase with undocumented dependencies. Which task decomposition pattern is most appropriate?",
+      options: [
+        "Fixed sequential pipeline: analyse each module, write tests, run tests, report results",
+        "Dynamic adaptive decomposition: map the structure, discover dependencies, reprioritise as new complexity emerges",
+        "Fixed sequential pipeline with a larger context window to handle the complexity",
+        "Process each module independently without any decomposition strategy"
+      ],
+      answer: 1,
+      rationales: [
+        "A fixed pipeline assumes the steps are known in advance. With undocumented dependencies, the agent cannot predetermine which modules to test first. It may discover Module A depends on Module B, requiring a plan change.",
+        "Adding tests to a legacy codebase with undocumented dependencies is an open-ended investigation task. The full scope is not known at the start — dependencies emerge during investigation. Dynamic decomposition adapts the plan as new information is discovered.",
+        "Context window size does not address the need for adaptability. The issue is that the plan must evolve based on discoveries, not that the model cannot hold enough data.",
+        "Independent module processing ignores dependencies. Tests for Module A may fail if Module B (a dependency) has no tests. Some coordination strategy is required."
+      ]
+    },
+    {
+      id: "d1.6-sim-3", source: "sim",
+      domain: "D1", topic: "d1.6", topicTitle: "Task Decomposition Strategies",
+      question: "Which of the following tasks is best suited for a fixed sequential pipeline (prompt chaining)?",
+      options: [
+        "Investigating the root cause of an intermittent production bug",
+        "Extracting structured data from invoices with a known format",
+        "Conducting a security audit of an unfamiliar system",
+        "Exploring a competitor's product features for a market analysis"
+      ],
+      answer: 1,
+      rationales: [
+        "Root cause investigation is open-ended. The cause is unknown, and the investigation must adapt as clues emerge. Dynamic decomposition is more appropriate.",
+        "Invoice data extraction has a known structure: the fields and format are predetermined. The steps are predictable: read invoice, extract fields, validate format, output structured data. Fixed pipelines are ideal for structured, predictable tasks.",
+        "Security audits of unfamiliar systems require exploration and adaptation. Vulnerabilities may reveal additional attack surfaces that change the investigation plan.",
+        "Market analysis involves discovering unknown information. The scope of competitor features is not fully known in advance, making dynamic decomposition more suitable."
+      ]
+    },
+    {
+      id: "d1.6-sim-4", source: "sim",
+      domain: "D1", topic: "d1.6", topicTitle: "Task Decomposition Strategies",
+      question: "What distinguishes attention dilution from a model capability limitation?",
+      options: [
+        "Attention dilution occurs only with small models; large models do not experience it",
+        "Attention dilution produces inconsistent depth across items in a single pass, while capability limitations produce consistently poor results",
+        "Attention dilution is caused by insufficient context window size",
+        "Attention dilution only affects code review tasks, not other types of analysis"
+      ],
+      answer: 1,
+      rationales: [
+        "Attention dilution affects models regardless of size. It is a structural issue of processing too many items in a single pass, not a model power issue.",
+        "Attention dilution is characterised by inconsistency: thorough analysis for some items, superficial for others, and contradictory evaluation of identical patterns. A capability limitation would produce consistently poor results across all items. The inconsistency is the telltale sign.",
+        "Attention dilution is about attention allocation, not context window size. A larger context window does not fix uneven attention distribution.",
+        "Attention dilution can occur in any task where too many items are processed in a single pass: code reviews, document analysis, data validation, and more."
+      ]
+    },
+    {
+      id: "d1.6-sim-5", source: "sim",
+      domain: "D1", topic: "d1.6", topicTitle: "Task Decomposition Strategies",
+      question: "A developer batches 14 files into groups of 5 for review but does not include a cross-file integration pass. Which issues will this approach miss?",
+      options: [
+        "Bugs within individual files — batching does not help with local analysis",
+        "Cross-file data flow issues and pattern inconsistencies between files in different batches",
+        "Performance bottlenecks caused by processing files in batches",
+        "Formatting inconsistencies within individual files"
+      ],
+      answer: 1,
+      rationales: [
+        "Batching actually improves local analysis by giving each batch a more focused attention budget. Per-file or per-batch analysis catches local issues better than a single pass.",
+        "Batching solves attention dilution within each batch but does not address cross-batch issues. Without a dedicated cross-file integration pass, data flow issues between modules in different batches and contradictory pattern evaluation across batches go undetected.",
+        "The question asks about review quality, not performance. Batching may actually improve throughput by reducing per-pass load.",
+        "Formatting inconsistencies within files are local issues that batching handles adequately. The missed issues are specifically cross-file concerns."
+      ]
+    },
+
+    // 1.6 authored extras
+    {
+      id: "d1.6-extra-1", source: "extra",
+      domain: "D1", topic: "d1.6", topicTitle: "Task Decomposition Strategies",
+      question: "Which symptom is the clearest signal that a multi-file analysis task is suffering from attention dilution rather than a model capability gap?",
+      options: [
+        "The model gets every file wrong with the same kind of error",
+        "Earlier files get detailed, specific feedback while later files get increasingly shallow feedback, and an identical pattern is judged differently in different files",
+        "The model refuses to start the analysis until the input is reduced",
+        "Each file's analysis takes longer than the previous one"
+      ],
+      answer: 1,
+      rationales: [
+        "Uniformly poor output across all files looks more like a capability limitation than dilution.",
+        "Inconsistent depth across items (deep early, shallow later) and contradictory evaluation of identical patterns are the telltale signs of attention dilution — a structural issue, not a capability one.",
+        "Refusal to start is a different failure mode (input size or formatting), not dilution.",
+        "Latency per item is unrelated to attention quality."
+      ]
+    },
+    {
+      id: "d1.6-extra-2", source: "extra",
+      domain: "D1", topic: "d1.6", topicTitle: "Task Decomposition Strategies",
+      question: "An agent must extract structured data from invoices with a known format AND respond to free-form questions about each invoice's history. Which decomposition is most appropriate?",
+      options: [
+        "A fixed sequential pipeline for the structured extraction; dynamic adaptive decomposition for the free-form historical investigation",
+        "Dynamic adaptive decomposition for both, because mixing modes is error-prone",
+        "Fixed sequential pipeline for both, because structure simplifies free-form reasoning",
+        "A single multi-pass review of both at once"
+      ],
+      answer: 0,
+      rationales: [
+        "Structured, predictable work (invoice fields with a known schema) is the textbook case for a fixed pipeline; open-ended investigation (\"what's this invoice's history?\") needs dynamic adaptive decomposition. Use the right pattern for each sub-task.",
+        "Forcing dynamic decomposition onto predictable work adds unnecessary variability and debugging cost.",
+        "Forcing a fixed pipeline onto open-ended investigation prevents the agent from adapting when it discovers something unexpected.",
+        "A single multi-pass review conflates two qualitatively different tasks and does not address the structural-vs-open-ended distinction."
+      ]
+    },
+
+    // ====================================================================
+    // 1.7 — Session State & Resumption
+    // ====================================================================
+    {
+      id: "d1.7-sim-1", source: "sim",
+      domain: "D1", topic: "d1.7", topicTitle: "Session State & Resumption",
+      question: "A developer resumes a Claude Code session after modifying 3 files in a 50-file codebase. The agent gives contradictory advice — recommending changes that were already made and referencing code that no longer exists. What is the most appropriate approach?",
+      options: [
+        "Start a completely new session and re-analyse the entire 50-file codebase from scratch",
+        "Resume the session and ask the agent to re-read only the 3 modified files to update its understanding",
+        "Start a fresh session with an injected summary of prior findings and inform the agent about the specific 3 file changes for targeted re-analysis",
+        "Use fork_session to create a new branch that can incorporate the file changes independently"
+      ],
+      answer: 2,
+      rationales: [
+        "Re-analysing all 50 files is wasteful when only 3 changed. The prior analysis of the other 47 files is still valid. Targeted re-analysis is more efficient.",
+        "Resuming preserves the stale tool results in conversation history. Even after re-reading the 3 files, the old file contents remain in context and can still influence reasoning for related decisions.",
+        "A fresh session with summary injection avoids stale tool results entirely. The injected summary preserves knowledge from the prior session. Specifying the 3 changed files enables targeted re-analysis without re-exploring the entire codebase.",
+        "fork_session creates a branch from the existing session, which still contains the stale tool results. The fork inherits the same stale context that caused the contradictions. Fork is for divergent exploration, not for resolving stale data."
+      ]
+    },
+    {
+      id: "d1.7-sim-2", source: "sim",
+      domain: "D1", topic: "d1.7", topicTitle: "Session State & Resumption",
+      question: "After analysing a codebase, a developer wants to compare two different refactoring strategies: one focusing on performance and another on readability. Which session management approach is most appropriate?",
+      options: [
+        "Start two completely new sessions, one for each strategy",
+        "Use --resume to continue the same session and try both strategies sequentially",
+        "Use fork_session to create two independent branches from the shared analysis baseline",
+        "Start a fresh session with summary injection for each strategy"
+      ],
+      answer: 2,
+      rationales: [
+        "Starting completely new sessions loses the initial analysis. Both strategies benefit from the shared baseline understanding of the codebase.",
+        "Trying both strategies in the same session contaminates the exploration. The second strategy attempt is influenced by the first strategy's analysis and decisions.",
+        "fork_session creates independent branches from a shared analysis baseline. Both branches build on the same initial codebase understanding but explore different directions independently. This is the exact use case for fork.",
+        "While summary injection preserves some knowledge, fork_session preserves the complete analysis context and is the purpose-built mechanism for divergent exploration."
+      ]
+    },
+    {
+      id: "d1.7-sim-3", source: "sim",
+      domain: "D1", topic: "d1.7", topicTitle: "Session State & Resumption",
+      question: "A developer completed a codebase analysis yesterday. No files have changed overnight. They want to continue where they left off today. Which approach is best?",
+      options: [
+        "Start a fresh session with summary injection",
+        "Use --resume <session-name> to continue the named session",
+        "Use fork_session to create a branch from yesterday's analysis",
+        "Start a completely new session and re-analyse everything"
+      ],
+      answer: 1,
+      rationales: [
+        "Summary injection loses detail from the full conversation history. When context is still valid, resume preserves more information than a summary can capture.",
+        "No files have changed, so the prior context is still valid. --resume restores the entire conversation history and lets the developer pick up exactly where they stopped. This is the ideal scenario for resume.",
+        "Fork is for divergent exploration, not for simple continuation. The developer wants to continue the same line of investigation, not explore alternatives.",
+        "Re-analysing everything is wasteful when the prior analysis is still valid. Resume is more efficient."
+      ]
+    },
+    {
+      id: "d1.7-sim-4", source: "sim",
+      domain: "D1", topic: "d1.7", topicTitle: "Session State & Resumption",
+      question: "Why is resuming a session after file modifications more problematic than simply asking the agent to re-read the changed files?",
+      options: [
+        "The agent cannot re-read files during a resumed session",
+        "The stale tool results from the previous session remain in conversation history and can still influence the agent's reasoning for related decisions, even after re-reading the changed files",
+        "Resumed sessions have a reduced context window that cannot accommodate new file contents",
+        "The agent will refuse to provide analysis if it detects file modifications"
+      ],
+      answer: 1,
+      rationales: [
+        "Agents can re-read files during resumed sessions. The issue is not capability but context contamination from stale data.",
+        "Resuming preserves the entire conversation history, including old tool results showing the pre-modification file contents. Even after re-reading changed files, the old contents remain in context. The agent may reference stale data from earlier in the conversation, especially for tangential decisions that do not directly involve the modified files.",
+        "Resumed sessions do not have reduced context windows. The issue is stale data in the existing history, not context capacity.",
+        "Agents do not detect or refuse analysis based on file modifications. They simply reason from whatever data is in their context, including stale results."
+      ]
+    },
+    {
+      id: "d1.7-sim-5", source: "sim",
+      domain: "D1", topic: "d1.7", topicTitle: "Session State & Resumption",
+      question: "A developer uses fork_session to handle stale context after modifying files. Why is this approach flawed?",
+      options: [
+        "fork_session is not available after file modifications",
+        "fork_session creates a branch from the existing session, which still contains the stale tool results — the fork inherits the same stale context",
+        "fork_session deletes the original session, losing all prior analysis",
+        "fork_session only works for comparing testing strategies, not for general use"
+      ],
+      answer: 1,
+      rationales: [
+        "fork_session is available regardless of file modifications. The issue is not availability but the inheritance of stale data.",
+        "fork_session branches from the current session state, including all stale tool results. The fork inherits the same contaminated context that caused the contradictory advice. Fork does not create a clean slate — it creates a copy of the current state. For stale context, a fresh start with summary injection is the correct approach.",
+        "fork_session does not delete the original session. It creates an independent branch while preserving the original.",
+        "fork_session can be used for any divergent exploration scenario. However, it is specifically wrong for handling stale context because it inherits the stale data."
+      ]
+    },
+
+    // 1.7 authored extras
+    {
+      id: "d1.7-extra-1", source: "extra",
+      domain: "D1", topic: "d1.7", topicTitle: "Session State & Resumption",
+      question: "A team is choosing between --resume, fork_session, and a fresh session with summary injection. Which mapping is correct?",
+      options: [
+        "--resume: divergent exploration; fork_session: continuation; fresh + summary: stale context",
+        "--resume: continuation when prior context is valid; fork_session: divergent exploration from a shared baseline; fresh + summary: stale tool results or degraded context",
+        "All three are interchangeable in practice — pick whichever is convenient",
+        "--resume: stale context; fork_session: continuation; fresh + summary: divergent exploration"
+      ],
+      answer: 1,
+      rationales: [
+        "The roles of resume and fork are swapped in this option.",
+        "These are the documented purposes: resume continues a specific named session (use when prior context is still valid), fork creates independent branches from a shared baseline (for comparing alternatives), and fresh + summary gives a clean baseline plus preserved knowledge (the right tool for stale results or degraded context).",
+        "The three options solve distinct problems and are not interchangeable.",
+        "These mappings are all wrong: resume is for continuation, fork is for divergence, fresh+summary is for stale context."
+      ]
+    },
+    {
+      id: "d1.7-extra-2", source: "extra",
+      domain: "D1", topic: "d1.7", topicTitle: "Session State & Resumption",
+      question: "Across a 200-file codebase, only 4 files have changed since the last analysis. Which approach minimises wasted effort while avoiding the stale-context problem?",
+      options: [
+        "Re-explore all 200 files from scratch in a fresh session",
+        "Start a fresh session, inject a structured summary of the prior findings, list the 4 changed files explicitly, and have the agent re-analyse only those files",
+        "Resume the session and re-read all 200 files",
+        "Fork the session and re-read only the 4 changed files in the fork"
+      ],
+      answer: 1,
+      rationales: [
+        "Re-exploring everything wastes the prior analysis of the 196 unchanged files.",
+        "A fresh session avoids stale tool results, the injected summary preserves prior findings, and naming the 4 changed files focuses the re-analysis where it is needed — the minimum work that still avoids contradictions.",
+        "Resume preserves stale tool results in history and re-reading every file in a 200-file codebase is wasteful.",
+        "Forking inherits the stale context that caused the contradictions; re-reading only the 4 files inside the fork does not remove the stale data already in the conversation."
+      ]
+    }
+  ];
+
+  window.EXAM_BANK.D1 = D1;
+})();
