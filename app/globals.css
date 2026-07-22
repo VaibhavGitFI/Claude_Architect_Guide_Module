@@ -1,0 +1,173 @@
+@import "tailwindcss";
+
+/* next-themes toggles a `dark` class on <html>; tell Tailwind v4 to key its
+   dark: variant off that class instead of the OS prefers-color-scheme. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --background: #f7f8fa;
+  --foreground: #0f172a;
+  --surface: #ffffff;
+  --border: #e6e9f2;
+  --border-soft: #eef0f7;
+  --ink-muted: #334155;
+  --ink-dim: #64748b;
+  --ink-faint: #94a3b8;
+
+  /* Brand accent — teal/blue, matches the Stock AI reference */
+  --accent: #0d9488;
+  --accent-600: #0f766e;
+  --accent-700: #115e59;
+  --accent-2: #2563eb;
+  --accent-soft: #f0fdfa;
+
+  /* Dark, fixed-color chrome: header / sidebar nav / footer (same in both themes) */
+  --shell-bg: #111827;
+  --shell-hover: #1f2937;
+  --shell-active: #374151;
+  --shell-text: #f3f4f6;
+  --shell-text-muted: #9ca3af;
+  --shell-border: #1f2937;
+
+  /* Domain color-coding (D1-D5) — distinct from the brand accent on purpose */
+  --d1: #6366f1;
+  --d2: #06b6d4;
+  --d3: #10b981;
+  --d4: #f59e0b;
+  --d5: #ec4899;
+
+  --ok: #059669;
+  --ok-soft: #ecfdf5;
+  --warn: #d97706;
+  --warn-soft: #fffbeb;
+  --bad: #dc2626;
+  --bad-soft: #fef2f2;
+  --info: #2563eb;
+  --info-soft: #eff6ff;
+}
+
+.dark {
+  --background: #0a0e14;
+  --foreground: #e6edf3;
+  --surface: #161b22;
+  --border: #262c36;
+  --border-soft: #21262d;
+  --ink-muted: #c9d1d9;
+  --ink-dim: #8b949e;
+  --ink-faint: #6e7681;
+
+  --accent-soft: rgba(13, 148, 136, 0.14);
+
+  --shell-bg: #05070a;
+  --shell-hover: #161b22;
+  --shell-active: #21262d;
+  --shell-border: #21262d;
+
+  --ok-soft: rgba(5, 150, 105, 0.16);
+  --warn-soft: rgba(217, 119, 6, 0.16);
+  --bad-soft: rgba(220, 38, 38, 0.16);
+  --info-soft: rgba(37, 99, 235, 0.16);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-border-soft: var(--border-soft);
+  --color-ink: var(--foreground);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-dim: var(--ink-dim);
+  --color-ink-faint: var(--ink-faint);
+
+  --color-accent: var(--accent);
+  --color-accent-600: var(--accent-600);
+  --color-accent-700: var(--accent-700);
+  --color-accent-2: var(--accent-2);
+  --color-accent-soft: var(--accent-soft);
+
+  --color-shell-bg: var(--shell-bg);
+  --color-shell-hover: var(--shell-hover);
+  --color-shell-active: var(--shell-active);
+  --color-shell-text: var(--shell-text);
+  --color-shell-text-muted: var(--shell-text-muted);
+  --color-shell-border: var(--shell-border);
+
+  --color-d1: var(--d1);
+  --color-d2: var(--d2);
+  --color-d3: var(--d3);
+  --color-d4: var(--d4);
+  --color-d5: var(--d5);
+
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-bad: var(--bad);
+  --color-bad-soft: var(--bad-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+
+  --font-sans: var(--font-sora);
+  --font-mono: var(--font-mono-code);
+
+  --animate-fade-in: fade-in 0.35s ease both;
+  --animate-fade-up: fade-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-scale-in: scale-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-correct-pulse: correct-pulse 0.6s ease;
+  --animate-wrong-shake: wrong-shake 0.4s ease;
+  --animate-count-up: count-up 0.5s ease both;
+  --animate-shimmer: shimmer 1.8s linear infinite;
+  --animate-float: float 6s ease-in-out infinite;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes correct-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(5, 150, 105, 0.55); }
+  100% { box-shadow: 0 0 0 14px rgba(5, 150, 105, 0); }
+}
+@keyframes wrong-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(5px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(3px); }
+}
+@keyframes count-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes shimmer {
+  0% { background-position: -300px 0; }
+  100% { background-position: 300px 0; }
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sora), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+::selection { background: rgba(13, 148, 136, 0.25); }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--ink-faint); }

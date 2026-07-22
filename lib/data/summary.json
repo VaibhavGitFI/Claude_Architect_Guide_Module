@@ -1,0 +1,13 @@
+{
+  "examBankCounts": {
+    "D1": 49,
+    "D2": 50,
+    "D3": 60,
+    "D4": 60,
+    "D5": 60
+  },
+  "totalQuestions": 279,
+  "antiPatternsCount": 38,
+  "scenariosCount": 6,
+  "flashcardsCount": 111
+}

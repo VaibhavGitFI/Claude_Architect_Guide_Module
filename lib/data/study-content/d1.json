@@ -1,0 +1,212 @@
+{
+  "title": "Domain 1 — Agentic Architecture & Orchestration",
+  "weight": "~27%",
+  "summary": "How to build agents that terminate reliably, coordinate through a central hub, enforce critical rules deterministically, decompose work without losing depth, and manage state across long-running sessions.",
+  "examTips": [
+    "When a loop terminates early or runs forever, the answer almost always involves <strong>stop_reason</strong> — not prompts or caps.",
+    "When multi-agent output is incomplete, blame the <strong>coordinator</strong> (decomposition or context passing), never the subagents.",
+    "Money, security, or compliance in the scenario? The answer is <strong>programmatic enforcement</strong>, not a better prompt.",
+    "Match the hook to its direction: <strong>PostToolUse</strong> normalises after; <strong>interception</strong> blocks before.",
+    "Inconsistent analysis depth across many items = <strong>attention dilution</strong> → multi-pass architecture, not a bigger model.",
+    "Stale/contradictory advice after editing files = <strong>fresh start + summary injection</strong>, not naive resume."
+  ],
+  "topics": [
+    {
+      "id": "d1.1",
+      "title": "Agentic Loops",
+      "intro": "The deterministic four-step execution cycle behind every Claude agent, controlled by the stop_reason field.",
+      "concepts": [
+        "An agentic loop is a deterministic control-flow pattern — not a prompt trick, retry loop, or chatbot turn.",
+        "Four steps: send request with full history → inspect stop_reason → if tool_use run tools + append results + resend → if end_turn present final response and stop.",
+        "stop_reason has two loop-relevant values: tool_use (continue) and end_turn (terminate).",
+        "Tool results MUST be appended to conversation history, or Claude can't reason about them next iteration.",
+        "Model-driven decision-making: Claude selects the tool from context, vs hard-coded decision trees — favoured for flexibility (exception: deterministic compliance, see 1.4)."
+      ],
+      "antiPatterns": [
+        "Parsing natural-language signals like 'I'm done' or 'task complete' — language is ambiguous.",
+        "Using an arbitrary iteration cap as the PRIMARY stopping mechanism (acceptable only as a safety net).",
+        "Checking response.content[0].type == 'text' for completion — Claude returns text alongside tool_use blocks.",
+        "Forcing tool_choice to 'any' to suppress text — prevents end_turn and creates an infinite loop."
+      ],
+      "deepDive": [
+        "The premature-termination bug: a support agent checks content[0].type == 'text'. Claude returns 'Let me look up your order' text in position [0] alongside a tool_use block; the code sees text, assumes completion, and returns an incomplete response. The fix is to check stop_reason instead — continue on tool_use, stop on end_turn — which works regardless of content types present.",
+        "Iteration caps are a common distractor presented as a fix for premature termination. They address runaway loops, not premature exits. The fix for premature termination is always correct stop_reason handling."
+      ],
+      "code": {
+        "title": "stop_reason-driven loop (Python-style pseudocode)",
+        "body": "for _ in range(MAX_ITERATIONS):          # safety net only\n    resp = client.messages.create(model=MODEL, tools=TOOLS, messages=messages)\n    if resp.stop_reason == \"end_turn\":\n        return final_text(resp)\n    if resp.stop_reason == \"tool_use\":\n        messages.append({\"role\": \"assistant\", \"content\": resp.content})\n        messages.append({\"role\": \"user\", \"content\": run_tools(resp)})"
+      },
+      "compare": {
+        "bad": "if response.content[0].type == 'text':\n    return done(response)   # misses text-alongside-tool_use",
+        "good": "if response.stop_reason == 'end_turn':\n    return done(response)   # authoritative, content-agnostic"
+      },
+      "examTip": "Any loop control answer that relies on text content, phrases, or a cap as the primary mechanism is wrong. stop_reason is the only authoritative signal."
+    },
+    {
+      "id": "d1.2",
+      "title": "Multi-Agent Orchestration",
+      "intro": "Hub-and-spoke architecture: a central coordinator and isolated subagents that never talk to each other directly.",
+      "concepts": [
+        "Coordinator (hub) decomposes the task, selects subagents, passes context, aggregates results, handles errors, and routes everything.",
+        "Subagents (spokes) each handle a specialised task and return results only to the coordinator.",
+        "ALL inter-subagent communication flows through the coordinator — subagents never communicate directly.",
+        "Centralisation buys observability, consistent error handling, and controlled information flow.",
+        "Coordinator responsibilities: dynamic subagent selection, research-scope partitioning, iterative refinement loops, centralised routing."
+      ],
+      "antiPatterns": [
+        "Assuming subagents inherit the coordinator's conversation history or share memory — they have fully isolated context.",
+        "Proposing direct inter-subagent communication as an efficiency win — it breaks observability and control.",
+        "Blaming downstream subagents for coverage gaps when the coordinator's decomposition was too narrow.",
+        "Adding more subagents to fix a decomposition problem — they just get equally narrow assignments."
+      ],
+      "deepDive": [
+        "Isolation principle: a spawned subagent starts with only what the coordinator explicitly includes in its prompt — no coordinator system prompt, no prior messages, no other subagents' results, no global state. Repeated invocations don't share memory either.",
+        "Narrow-decomposition failure (the 'renewable energy' / 'creative industries' pattern): output misses entire categories because the coordinator only assigned a subset of subtopics. The subagents researched thoroughly what they were given. Trace failures to their origin — the coordinator's decomposition — and fix it there."
+      ],
+      "code": {
+        "title": "Coordinator routing through the hub (pseudocode)",
+        "body": "subtopics = coordinator.decompose(topic)        # must cover full breadth\nresults = [coordinator.invoke(agent, ctx=build_ctx(st)) for st in subtopics]\nreport = coordinator.synthesize(results)        # all flow back through hub\nwhile coordinator.has_gaps(report):             # iterative refinement\n    report = coordinator.refine(report)"
+      },
+      "examTip": "If output is incomplete in SCOPE (missing whole categories), suspect the coordinator's decomposition. If incomplete in attribution, suspect context passing (1.3). Never the subagent."
+    },
+    {
+      "id": "d1.3",
+      "title": "Subagent Invocation & Context Passing",
+      "intro": "The mechanics: the Agent tool, AgentDefinitions, structured context passing, parallel spawning, and fork_session.",
+      "concepts": [
+        "The Agent tool (renamed from Task in SDK v2.1.63; 'Task' is a backward-compatible alias) spawns subagents.",
+        "Coordinator's allowedTools MUST include 'Agent' (or 'Task') — a hard binary gate for spawning.",
+        "An AgentDefinition specifies description, system prompt, and tool restrictions (scoped to the subagent's role).",
+        "Parallel spawning: emit multiple Agent tool calls in a single response for independent tasks to cut latency.",
+        "fork_session creates independent branches from a shared baseline (divergent exploration); --resume continues a named session."
+      ],
+      "antiPatterns": [
+        "Assuming subagents have access to the coordinator's history or other subagents' outputs.",
+        "Blaming the synthesis agent for missing citations when the coordinator passed content without metadata.",
+        "Proposing sequential invocation for tasks that can run independently (adds latency).",
+        "Confusing fork_session (divergence) with --resume (continuation)."
+      ],
+      "deepDive": [
+        "Three context-passing rules: (1) include complete findings from prior agents in full; (2) use structured formats that separate content from metadata (claim + source_url + document_name + page_number + confidence); (3) specify goals, not step-by-step procedures, so subagents can adapt.",
+        "Attribution-failure pattern: the synthesis agent produces an excellent summary with no source attribution because the coordinator stripped metadata before passing content. The fix is to pass structured metadata alongside content — not to edit the synthesis prompt or give it direct tool access."
+      ],
+      "code": {
+        "title": "Structured finding with separated metadata",
+        "body": "{\n  \"findings\": [{\n    \"claim\": \"Solar efficiency rose 25% in a decade\",\n    \"source_url\": \"https://example.com/report\",\n    \"document_name\": \"Solar Industry Report 2024\",\n    \"page_number\": 14,\n    \"confidence\": \"high\",\n    \"retrieved_by\": \"web_search_agent\"\n  }]\n}"
+      },
+      "examTip": "Unsourced synthesis output = context passing without metadata. Independent subagents = parallel spawn (multiple Agent calls in one response). fork = diverge, resume = continue."
+    },
+    {
+      "id": "d1.4",
+      "title": "Workflow Enforcement & Handoff",
+      "intro": "Choosing prompt-based guidance vs programmatic enforcement, prerequisite gates, lifecycle hooks, and self-contained handoffs.",
+      "concepts": [
+        "Prompt-based guidance is probabilistic (~90–95%); programmatic enforcement is deterministic (100%).",
+        "Decision rule: a single failure causing financial loss, security breach, or compliance violation → programmatic enforcement.",
+        "Prerequisite gates are code-level checks that block a tool until a prior condition is met (the model can't bypass them).",
+        "SubagentStart / SubagentStop are lifecycle hooks; subagents can define their own scoped PreToolUse/PostToolUse hooks; Stop hooks in subagent frontmatter auto-convert to SubagentStop.",
+        "Multi-concern requests: decompose, investigate in parallel with shared context, synthesise one unified response."
+      ],
+      "antiPatterns": [
+        "Enhanced system-prompt instructions as the fix for high-stakes compliance failures (never reaches 0% failure).",
+        "Few-shot examples as 'sufficient' for guaranteed compliance — still probabilistic.",
+        "Routing classifiers proposed to fix per-agent compliance (classifiers route; they don't enforce per-agent workflow).",
+        "Handoff summaries that omit required fields like customer ID or recommended action."
+      ],
+      "deepDive": [
+        "The 8% failure rate: a support agent processes refunds without verifying ownership in 8% of cases despite a clear prompt instruction. A stronger prompt might reach 3–4% but never 0%. A programmatic prerequisite gate (process_refund blocked until get_customer returns a verified ID) eliminates the failure entirely.",
+        "Structured handoff: the human agent does NOT have the conversation transcript, so the summary must be self-contained — customer ID, conversation summary, root-cause analysis, refund amount (if applicable), and recommended action. An incomplete summary forces the customer to repeat everything."
+      ],
+      "code": {
+        "title": "Prerequisite gate blocking a financial tool",
+        "body": "def process_refund(args, session):\n    if not session.get(\"verified_customer_id\"):\n        return {\"error\": \"Identity not verified — call get_customer first.\"}\n    return do_refund(args[\"customer_id\"], args[\"amount\"])"
+      },
+      "compare": {
+        "bad": "system_prompt += 'Always verify identity before refunds.'\n# 8% still slip through — probabilistic",
+        "good": "gate: process_refund requires session.verified_customer_id\n# 0% slip through — deterministic"
+      },
+      "examTip": "If the scenario involves money, security, or compliance and the failure rate is non-zero, pick the programmatic gate/hook. Reject every 'stronger prompt' or 'few-shot' option."
+    },
+    {
+      "id": "d1.5",
+      "title": "Agent SDK Hooks",
+      "intro": "PostToolUse hooks normalise data after execution; tool-call interception hooks enforce policy before execution.",
+      "concepts": [
+        "PostToolUse hooks run after a tool executes, before the model sees the result — used to transform/normalise data.",
+        "Tool-call interception hooks run before a tool executes — used to block, modify, or redirect the call.",
+        "Normalisation targets: Unix timestamps → ISO 8601, numeric/character status codes → human-readable strings, consistent currency formats.",
+        "Interception use cases: refund threshold escalation, AML prerequisite gates, manager-approval workflows.",
+        "Framework: 100% requirement → hooks (deterministic); preference tolerating deviation → prompts (probabilistic)."
+      ],
+      "antiPatterns": [
+        "Using PostToolUse hooks to BLOCK policy-violating actions — they run after execution, so the action already happened.",
+        "Enhanced prompt instructions as the solution for 100% compliance requirements.",
+        "Relying on model-side data transformation instead of a PostToolUse normalisation hook.",
+        "Confusing hook direction — PostToolUse is after, interception is before."
+      ],
+      "deepDive": [
+        "Data-format chaos: three MCP tools return dates as Unix timestamps, ISO 8601, and DD/MM/YYYY, and statuses as numeric codes, English strings, and single characters. Without a hook the model sometimes misreads day/month order or interprets 'P' as 'processed' instead of 'pending'. A PostToolUse hook normalises all of it so the model always receives consistent data.",
+        "Side-by-side: international transfers must pass AML checks. A prompt works ~95% — the 5% are regulatory violations. A pre-execution interception hook blocks transfer_funds until aml_check passes — 100%. For markdown formatting, by contrast, a hook is unnecessary overhead; a prompt is fine."
+      ],
+      "code": {
+        "title": "Two hook directions",
+        "body": "def post_tool_use(name, result):          # AFTER: normalise\n    result[\"date\"] = to_iso8601(result[\"date\"])\n    return result\n\ndef pre_tool_use(name, args, session):    # BEFORE: enforce\n    if name == \"transfer_funds\" and not session.get(\"aml_passed\"):\n        return Block(\"AML check required\")\n    return Allow()"
+      },
+      "examTip": "Blocking a bad action? It must be a PRE-execution interception hook. Cleaning up messy tool output? PostToolUse. Choosing the wrong direction is the trap."
+    },
+    {
+      "id": "d1.6",
+      "title": "Task Decomposition Strategies",
+      "intro": "Fixed sequential pipelines vs dynamic adaptive decomposition, and fixing attention dilution with multi-pass architecture.",
+      "concepts": [
+        "Fixed sequential pipelines (prompt chaining): predetermined ordered steps; best for predictable, structured tasks.",
+        "Dynamic adaptive decomposition: subtasks generated from discoveries; best for open-ended, unknown-scope tasks.",
+        "Fixed = consistent/reliable/debuggable but can't adapt; dynamic = adaptive/thorough but less predictable.",
+        "Attention dilution: too many items in one pass → attention per item drops → inconsistent depth.",
+        "Multi-pass architecture: per-item local passes (full attention each) + a separate cross-item integration pass."
+      ],
+      "antiPatterns": [
+        "A bigger model or larger context window as the fix for attention dilution (it's architectural, not capability).",
+        "A single-pass review with 'better prompts' treated as equivalent to multi-pass.",
+        "Applying fixed pipelines to open-ended investigation tasks that require adaptation.",
+        "Batching files into groups without a cross-file integration pass (misses cross-batch issues)."
+      ],
+      "deepDive": [
+        "The 14-file code review: files 1–5 get detailed feedback, 6–9 moderate, 10–14 superficial (missing null-pointer and SQL-injection bugs); a forEach flagged in file 3 is approved in file 11. These are attention-dilution symptoms.",
+        "The fix is structural: 14 per-file analysis passes (each file gets dedicated attention, catching the late-file bugs) plus one cross-file integration pass (catching the inconsistent forEach evaluation and data-flow issues). Not a better model, larger window, or stronger prompt."
+      ],
+      "code": {
+        "title": "Multi-pass decomposition",
+        "body": "local = [analyse_one(f) for f in files]   # per-item: full attention\ncross = integration_pass(local, files)    # cross-item: flow + consistency\nreport = compile(local, cross)"
+      },
+      "examTip": "Inconsistent depth across many items, or the same pattern judged differently in different files = attention dilution → multi-pass (per-item + integration). Match pattern to task, not to sophistication."
+    },
+    {
+      "id": "d1.7",
+      "title": "Session State & Resumption",
+      "intro": "Resume vs fork_session vs fresh-start-with-summary, and avoiding the stale context problem after file changes.",
+      "concepts": [
+        "--resume <session-name>: continues a named session, restoring the full history. Use when prior context is still valid.",
+        "fork_session: independent branches from a shared baseline for divergent exploration; branches don't see each other.",
+        "Fresh start with summary injection: a new session with a curated summary and no stale tool results.",
+        "Targeted re-analysis: re-analyse only the changed files, relying on the summary for the rest — beats full re-exploration.",
+        "Three options, three purposes: resume = continuation, fork = divergence, fresh+summary = stale results."
+      ],
+      "antiPatterns": [
+        "Recommending --resume after files have been modified (stale tool results cause contradictions).",
+        "Full re-exploration of a large codebase when only a few files changed (wasteful).",
+        "Using fork_session to handle stale context — the fork inherits the stale history.",
+        "Confusing fork_session with --resume."
+      ],
+      "deepDive": [
+        "Stale context problem: resuming after edits restores old tool results (old file contents). The model reasons from them and gives contradictory advice — recommending fixes already made or referencing code that no longer exists.",
+        "The contradictory-advice bug: across two days on a 50-file codebase, three issues fixed overnight; on resume Claude re-recommends the fixed issues and flip-flops between old and new code. The reliable fix is a fresh session with an injected summary ('prior analysis found X/Y/Z; these 3 files changed') plus targeted re-analysis of just those files. Resuming-then-re-reading is insufficient because stale results remain."
+      ],
+      "code": {
+        "title": "Fresh start + summary + targeted re-analysis (pseudocode)",
+        "body": "session = new_session()\nsession.inject(summary=prior_findings,\n               changed=[\"auth.ts\", \"session.ts\", \"middleware.ts\"])\nsession.reanalyse(changed_only=True)   # not the whole codebase"
+      },
+      "examTip": "Contradictory advice after editing files = stale context. Best answer: fresh start + summary injection + targeted re-analysis. Naive resume (even with a re-read) and fork both keep stale history."
+    }
+  ]
+}

@@ -1,0 +1,201 @@
+{
+  "title": "Domain 5 — Context Management & Reliability",
+  "weight": "~15%",
+  "summary": "Protecting critical facts from summarisation, calibrating escalation, propagating errors as structured context, surviving context degradation in long sessions, calibrating confidence and human review, and preserving claim-source provenance through synthesis.",
+  "examTips": [
+    "Summarisation eats amounts/dates/IDs — protect them in a <strong>persistent case facts block</strong> that's never summarised.",
+    "Escalate only on the <strong>three valid triggers</strong>; <strong>sentiment</strong> and <strong>self-reported confidence</strong> are unreliable.",
+    "Subagent failure? Return <strong>structured error context</strong>; never silently suppress or kill the whole pipeline.",
+    "<strong>Context degradation is an attention problem, not a token-limit one</strong> — scratchpad files, not a bigger window.",
+    "<strong>Never trust aggregate accuracy</strong> — validate by document type AND field, and calibrate confidence with labelled sets.",
+    "Keep <strong>claim→source provenance</strong> through synthesis; annotate conflicting sources with both values and dates."
+  ],
+  "topics": [
+    {
+      "id": "d5.1",
+      "title": "Context Window Management",
+      "intro": "The persistent case facts block protects transactional data from the progressive summarisation trap.",
+      "concepts": [
+        "Progressive summarisation systematically destroys numerical values, dates, percentages, IDs, and customer-stated expectations.",
+        "The persistent case facts block holds transactional facts in a structured block included in every prompt, outside (never) summarised history.",
+        "Lost-in-the-middle: models reliably process the start and end of long inputs; the fix is structural — key findings first + section headers.",
+        "Trim verbose tool results (40+ fields -> the ~5 needed) before they enter context, in a PostToolUse hook or the tool itself.",
+        "The Claude API is stateless: each request must include the full conversation history; use case-facts + summarisation, not truncation."
+      ],
+      "antiPatterns": [
+        "Believing progressive summarisation is safe for transactional data.",
+        "Trying to fix lost-in-the-middle by telling the model to 'pay attention to everything'.",
+        "Keeping full tool results in context 'in case the model needs them later'.",
+        "Selectively truncating conversation history (breaks coherence on a stateless API)."
+      ],
+      "deepDive": [
+        "Multi-issue support scenario: after several summarised turns the agent says 'your recent refund request' instead of '$247.83 for order #8891'. The fix is a persistent case facts block holding amounts/dates/order numbers, included in every prompt outside summarised history — not a bigger context window, not 'preserve numbers during summarisation' (still unreliable), not an external DB retrieval.",
+        "Upstream agent optimisation: have upstream agents return structured data (key facts, citations, relevance scores, dates) instead of verbose reasoning chains, so a downstream synthesis agent with a limited budget isn't wasting tokens on reasoning it can't use."
+      ],
+      "code": {
+        "title": "Persistent case facts block",
+        "body": "{\n  \"caseFactsBlock\": {\n    \"customerId\": \"C-4421\",\n    \"issues\": [{ \"orderId\": \"#8891\", \"orderDate\": \"2024-03-03\",\n                 \"refundAmount\": \"$247.83\", \"status\": \"pending_refund\" }]\n  }\n}  // included every prompt, never summarised"
+      },
+      "compare": {
+        "bad": "Summarise earlier turns to save tokens (loses $247.83, #8891, March 3rd)",
+        "good": "Persistent case facts block carries transactional facts outside summarised history"
+      },
+      "examTip": "Agent forgets a specific amount/order after summarisation → persistent case facts block (never summarised). Lost-in-the-middle → key findings first (structural)."
+    },
+    {
+      "id": "d5.2",
+      "title": "Escalation & Ambiguity Resolution",
+      "intro": "Three valid escalation triggers, two unreliable ones, and safe handling of ambiguous customer matches.",
+      "concepts": [
+        "Valid trigger 1: customer explicitly requests a human — escalate immediately, no 'let me try first' (absolute rule).",
+        "Valid trigger 2: policy exceptions/gaps (policy is silent) — distinct from violations (documented answer, no escalation).",
+        "Valid trigger 3: inability to make meaningful progress — after the agent actually attempted resolution.",
+        "Unreliable triggers: sentiment-based escalation (frustration != complexity) and self-reported confidence (poorly calibrated).",
+        "Ambiguous customer matches: ask for additional identifiers; never select by most-recent/most-active heuristic."
+      ],
+      "antiPatterns": [
+        "Escalating on negative sentiment / frustration scores.",
+        "Escalating when self-reported confidence drops below a threshold.",
+        "Attempting to resolve before honouring an explicit human request.",
+        "Selecting from ambiguous matches by heuristic (privacy violations, wrong-account actions)."
+      ],
+      "deepDive": [
+        "55% first-contact resolution scenario: the agent escalates straightforward damage replacements but autonomously attempts complex policy exceptions. The fix is explicit escalation criteria with few-shot examples in the system prompt (prompt optimisation before infrastructure) — not sentiment analysis, not self-reported confidence routing, not a separate classifier model as the first step.",
+        "Frustration nuance: frustrated + resolvable -> acknowledge and resolve; reiterates wanting a human after an offer -> escalate; explicitly asks for a human from the start -> escalate immediately with no investigation."
+      ],
+      "code": {
+        "title": "Explicit escalation criteria (system prompt sketch)",
+        "body": "Escalate ONLY when: (1) the customer explicitly asks for a human;\n  (2) the request falls outside documented policy (a gap);\n  (3) you attempted resolution and cannot progress.\nDo NOT escalate on frustration alone or a self-rated confidence score.\nMultiple customer matches -> ask for email/phone/order number."
+      },
+      "compare": {
+        "bad": "Escalate when sentiment is negative or self-confidence < threshold",
+        "good": "Escalate on explicit human request / policy gap / inability to progress; few-shot examples in the prompt"
+      },
+      "examTip": "Three valid triggers, two unreliable (sentiment, self-confidence). Explicit human request = escalate now. Ambiguous match = ask for identifiers, never heuristic-pick."
+    },
+    {
+      "id": "d5.3",
+      "title": "Error Propagation in Multi-Agent Systems",
+      "intro": "Structured error context enables recovery; access failures and valid empty results are not the same.",
+      "concepts": [
+        "Structured error context has four elements: failure type, what was attempted, partial results, and alternative approaches.",
+        "Failure types: transient (retry), validation (fix input), business (escalate/alternative), permission (authorisation change).",
+        "Silent suppression (empty results marked success) is the worst anti-pattern — the coordinator never retries and silently omits content.",
+        "Workflow termination (kill the pipeline on one failure) wastes other agents' completed work.",
+        "Access failure (couldn't reach source; didn't execute) -> consider retry; valid empty result (executed, no matches) -> don't retry."
+      ],
+      "antiPatterns": [
+        "Catching a timeout and returning empty results marked successful (silent suppression).",
+        "Terminating the entire pipeline when one subagent times out.",
+        "Returning a generic 'search unavailable' status that hides query, partial results, and alternatives.",
+        "Retrying a valid empty result because it looks like a failure."
+      ],
+      "deepDive": [
+        "Web search subagent timeout: the best design returns structured error context (failure type, attempted query, partial results, alternative approaches) so the coordinator can retry, try an alternative, proceed with partial results, or escalate. Generic 'search unavailable' after retries, empty-as-success, and pipeline termination are all wrong.",
+        "Local recovery first: subagents retry transient failures locally (e.g. exponential backoff, fallback sources) and only propagate what they can't resolve, always including what was attempted and partial results — reducing coordinator complexity. Coverage annotations note gaps in synthesis instead of silently omitting topics."
+      ],
+      "code": {
+        "title": "Access failure vs valid empty result",
+        "body": "// Access failure -- consider retry\n{ \"status\": \"error\", \"failureType\": \"transient\",\n  \"message\": \"Connection timeout after 30s\", \"shouldRetry\": true }\n\n// Valid empty result -- do NOT retry\n{ \"status\": \"success\", \"results\": [],\n  \"message\": \"Query executed; no matching records.\", \"shouldRetry\": false }"
+      },
+      "compare": {
+        "bad": "Timeout -> return { results: [], status: 'success' } (silent suppression)",
+        "good": "Return structured error context; coordinator decides retry/alternative/partial/escalate"
+      },
+      "examTip": "Subagent failure → structured error context (type/attempted/partial/alternatives). Access failure → retry; valid empty result → don't. Never suppress or kill the pipeline."
+    },
+    {
+      "id": "d5.4",
+      "title": "Codebase Exploration & Context Degradation",
+      "intro": "Degradation is an attention problem; scratchpad files, subagent isolation, /compact, and state manifests are the fixes.",
+      "concepts": [
+        "Context degradation: the model references 'typical patterns' instead of specific classes/methods/dependency chains found earlier.",
+        "It is NOT a token-limit problem — a bigger context window doesn't fix it; verbose output buries precise earlier findings.",
+        "Scratchpad files persist key findings outside the conversation context, immune to degradation — maintain them from the start.",
+        "Subagent delegation provides context isolation (not just parallelisation): verbose exploration stays out of the main context.",
+        "/compact reduces context usage proactively to maintain quality; state manifests enable crash recovery across sessions."
+      ],
+      "antiPatterns": [
+        "Increasing the context window to solve context degradation.",
+        "Thinking subagent delegation is only about parallelisation.",
+        "Restarting a session to fix degradation without saving state (loses accumulated knowledge).",
+        "Using /compact only when hitting context limits rather than proactively."
+      ],
+      "deepDive": [
+        "Productivity agent scenario: after investigating several modules it references 'typical repository patterns' instead of 'OrderRepository at src/repos/order.ts implements Repository<T> with custom findById caching'. The fix is scratchpad files recording key findings to read for subsequent questions — not a bigger window, not restarting, not pre-loading the whole codebase.",
+        "Summary injection between phases prevents Phase 2 subagents from re-exploring Phase 1; crash recovery manifests record explored paths, key findings, current phase, and next steps so the coordinator can resume without repeating work."
+      ],
+      "code": {
+        "title": "Crash-recovery state manifest",
+        "body": "{\n  \"sessionId\": \"explore-order-service-001\",\n  \"phase\": 2,\n  \"exploredPaths\": [\"src/repos/order.ts\", \"src/services/order.ts\"],\n  \"keyFindings\": { \"criticalIssue\": \"RefundProcessor has no Stripe retry logic\" },\n  \"nextSteps\": [\"Investigate PaymentGateway error handling\"]\n}"
+      },
+      "compare": {
+        "bad": "Increase the context window so all discovery output fits",
+        "good": "Scratchpad files + subagent isolation persist specific findings outside context"
+      },
+      "examTip": "Model drifts to 'typical patterns' = context degradation (attention, not tokens). Fix: scratchpad files; subagent isolation; /compact proactively; state manifests for recovery."
+    },
+    {
+      "id": "d5.5",
+      "title": "Human Review & Confidence Calibration",
+      "intro": "Aggregate accuracy hides per-segment failure; calibrate confidence and prioritise reviewers on uncertainty.",
+      "concepts": [
+        "Aggregate metrics trap: 97% overall can hide 40%+ error on specific document types (high-volume easy segments mask the rest).",
+        "Always validate accuracy by document type AND field segment before automating — never on aggregate alone.",
+        "Raw model confidence is not calibrated; the same score means different accuracy per field/document type.",
+        "Calibrate confidence against labelled validation sets, then set calibrated thresholds for automation vs human review.",
+        "Stratified random sampling must include HIGH-confidence (automated) items to catch novel error patterns."
+      ],
+      "antiPatterns": [
+        "Using aggregate accuracy to justify automating all high-confidence extractions.",
+        "Only sampling low-confidence extractions for human review.",
+        "Using raw model confidence scores without calibration.",
+        "Spreading reviewer capacity evenly across all extractions."
+      ],
+      "deepDive": [
+        "97% scenario: automating all extractions above 95% confidence is risky because the aggregate masks poor per-type performance (handwritten receipts 60%, international 45%) and confidence scores need calibration against labelled sets first. The risk isn't the threshold value or 'overconfidence over time' — it's hidden per-segment failure plus uncalibrated confidence.",
+        "Reviewer capacity prioritisation: route the highest-uncertainty items first (low confidence, ambiguous/contradictory sources, historically poor document types) and order the queue dynamically — serve the next-highest-uncertainty item when a reviewer frees up, not chronological order. Even distribution wastes capacity on items the model handles well."
+      ],
+      "code": {
+        "title": "Per-segment accuracy (the aggregate hides this)",
+        "body": "Document type        Date acc  Amount acc\nStandard invoices    99.5%     98.2%\nHandwritten receipts 60.1%     55.3%\nInternational        45.2%     52.1%\nAggregate            97.0%     96.1%   <- masks the failures"
+      },
+      "compare": {
+        "bad": "Automate everything above 95% confidence based on 97% aggregate accuracy",
+        "good": "Validate by document type+field, calibrate confidence on labelled sets, then automate validated segments"
+      },
+      "examTip": "Aggregate accuracy is a trap — validate by document type AND field. Calibrate confidence on labelled sets. Stratified-sample high-confidence items; prioritise reviewers on uncertainty."
+    },
+    {
+      "id": "d5.6",
+      "title": "Information Provenance & Multi-Source Synthesis",
+      "intro": "Preserve claim-source mappings through synthesis; annotate conflicts and respect temporal context.",
+      "concepts": [
+        "Every finding carries a structured claim-source mapping: claim, source URL, document name, relevant excerpt, publication date.",
+        "Attribution dies during summarisation unless the synthesis agent is explicitly told to preserve and merge claim-source mappings.",
+        "Conflicting credible sources: annotate both values with full attribution and dates — never arbitrarily pick one or average.",
+        "Temporal awareness: different publication/data-collection dates often explain different numbers (a trend, not a contradiction).",
+        "Content-appropriate rendering: financial data -> tables, news -> prose, technical findings -> structured lists."
+      ],
+      "antiPatterns": [
+        "Selecting the most recent (or most authoritative, or averaged) source when two credible sources conflict.",
+        "Assuming different numbers from different-dated sources are contradictions.",
+        "Letting the synthesis agent paraphrase without preserving claim-source mappings.",
+        "Rendering all content in a single uniform format (all prose, all tables, or all lists)."
+      ],
+      "deepDive": [
+        "Conflict scenario: Source A reports 12% growth (2023 data), Source B 8% (2024 data) and the synthesis agent picks the more recent. The correct approach is to annotate both values with source attribution and publication dates and let the consumer decide — selecting one destroys information and presents false certainty; escalating to a human isn't necessary when both can simply be presented with context.",
+        "Attribution must survive every pipeline step (research -> analysis -> synthesis -> report), with the synthesis step the most common failure point. When analysis hits conflicting values (e.g. audited vs preliminary, fiscal vs calendar year), complete the analysis with the conflict intact and annotated, leaving resolution to the coordinator or consumer."
+      ],
+      "code": {
+        "title": "Structured claim-source mapping",
+        "body": "{\n  \"claim\": \"Renewable investment reached $495B in 2023\",\n  \"sourceUrl\": \"https://example.com/iea-report-2024\",\n  \"documentName\": \"IEA World Energy Investment Report 2024\",\n  \"relevantExcerpt\": \"...approximately $495 billion in calendar year 2023...\",\n  \"publicationDate\": \"2024-06-15\"\n}"
+      },
+      "compare": {
+        "bad": "Two sources conflict -> report only the most recent value",
+        "good": "Annotate both values with sources + dates; let the consumer interpret the difference"
+      },
+      "examTip": "Provenance = claim+source+document+excerpt+date, preserved through synthesis. Conflicts → annotate both + dates (different dates = trend, not contradiction). Render per content type."
+    }
+  ]
+}

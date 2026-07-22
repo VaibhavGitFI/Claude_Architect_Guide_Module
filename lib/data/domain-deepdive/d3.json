@@ -1,0 +1,246 @@
+{
+  "number": 3,
+  "weight": "~20%",
+  "title": "Claude Code Configuration & Workflows",
+  "tagline": "Configuring Claude Code correctly — memory hierarchy, skills, path-scoped rules, execution modes, refinement, and CI/CD.",
+  "why": "This domain is full of **scoping and mechanism** questions with one recurring theme: **`.claude/` (project) is shared via git; `~/.claude/` (user) is personal.** It also tests precise facts — CLAUDE.md is *concatenated guidance*, not a precedence layer (move hard rules to `settings.json`/hooks); the `@path` import syntax; path-scoped `.claude/rules/`; ambiguity (not difficulty) picks plan vs direct; examples-before-prose for refinement; and the **`-p` flag** for non-interactive CI.",
+  "sections": [
+    {
+      "heading": "3.1 — CLAUDE.md Hierarchy, Scoping & Modular Organisation",
+      "body": [
+        {
+          "type": "p",
+          "text": "Claude Code reads CLAUDE.md at **three levels**: **user** (`~/.claude/CLAUDE.md`, personal, not in git), **project** (`.claude/CLAUDE.md` or root `CLAUDE.md`, version-controlled, shared with everyone who clones), and **directory** (a `CLAUDE.md` in a subdirectory, applying to that directory only)."
+        },
+        {
+          "type": "callout",
+          "kind": "key",
+          "text": "CLAUDE.md is **not** a strict-precedence config — all discovered files are **concatenated into context**, not overriding each other. Load order runs broadest → most specific (root down to your working dir; `CLAUDE.local.md` appended after `CLAUDE.md`), but if two rules contradict, Claude may pick one arbitrarily. CLAUDE.md is delivered as a *user message*, not the system prompt — no guarantee of strict compliance."
+        },
+        {
+          "type": "callout",
+          "kind": "warn",
+          "text": "Don't confuse CLAUDE.md with `settings.json`. **`settings.json` has a strict precedence chain** (managed > local > project > user, managed always wins) and is **enforced by the client**. CLAUDE.md only *shapes* behaviour. If a rule must hold every run (blocked tool, required formatter, permission policy), encode it in `settings.json` or a **hook** — not CLAUDE.md scoping. Reject distractors claiming \"more specific scope wins\" or \"user overrides project.\""
+        },
+        {
+          "type": "p",
+          "text": "**Modular organisation** uses what the exam guide itself calls **the `@import` syntax** — but the literal directive is just `@` followed by a path on its own line (there's no reserved word \"import\" to type; you write `@./file.md`, never `@import(./file.md)`). Each `@<path>` line is inlined at load time. But imports load **eagerly**: splitting a 600-line file into six 100-line imports makes the *source* nicer but the context Claude sees is the same size. To actually shrink per-session context, use path-scoped `.claude/rules/` (see 3.3)."
+        },
+        {
+          "type": "code",
+          "lang": "markdown",
+          "body": "# .claude/CLAUDE.md\nCoding standards:\n\n@./standards/naming-conventions.md\n@./standards/error-handling.md\n@./standards/testing-requirements.md"
+        },
+        {
+          "type": "p",
+          "text": "**`CLAUDE.local.md`** sits next to `CLAUDE.md` at any level, loads after it (last word on conflicts at that level), is gitignored by convention, and is for your own per-repo quirks — a project-scoped version of `~/.claude/CLAUDE.md`. The **`.claude/rules/`** directory is an alternative holding topic-specific rule files; without frontmatter they load for all sessions. The **`/memory`** command **reveals which memory files are loaded — it does NOT load them**; use it to diagnose, not to activate."
+        },
+        {
+          "type": "callout",
+          "kind": "warn",
+          "text": "The favourite trap: a **new team member gets inconsistent behaviour** while a veteran's Claude follows all conventions. Root cause is always that the conventions live in the veteran's **user-level `~/.claude/CLAUDE.md`** (not shared via git), so the new dev never received them. Fix: move them to **project-level** `.claude/CLAUDE.md`."
+        }
+      ]
+    },
+    {
+      "heading": "3.2 — Custom Slash Commands and Skills",
+      "body": [
+        {
+          "type": "p",
+          "text": "The exam guide (and its official sample question) tests **two related but distinct mechanisms** — know them on their own terms:"
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "**Slash commands** — plain markdown files that create a `/name` command. **Project-scoped**: `.claude/commands/<name>.md`, version-controlled, available to every developer on clone/pull (this is the correct home for a team-wide `/review` command). **User-scoped**: `~/.claude/commands/<name>.md`, personal only, not shared via git.",
+            "**Skills** — `.claude/skills/<name>/SKILL.md`, which adds optional YAML **frontmatter** plus a supporting-files directory. Skills can be invoked explicitly (`/name`) or auto-discovered by Claude when the task matches the skill's description."
+          ]
+        },
+        {
+          "type": "callout",
+          "kind": "key",
+          "text": "The scoping pattern is consistent across Claude Code: **project (`.claude/`) is shared via git; user (`~/.claude/`) is personal.** This applies to CLAUDE.md, commands, skills, and rules alike — don't put a team-wide command or skill under a `~/.claude/` path."
+        },
+        {
+          "type": "callout",
+          "kind": "tip",
+          "text": "Real-world footnote (not exam-tested as far as this guide's task statements go): since January 2026 Claude Code internally treats `.claude/commands/` as a legacy path feeding the same underlying Skills execution engine. The exam guide itself still frames \"custom slash commands\" and \"skills\" as two things to separately know how to create and scope — so answer exam questions using the distinction above, not the internal-unification detail."
+        },
+        {
+          "type": "p",
+          "text": "`.claude/skills/` frontmatter — the three critical options the exam tests:"
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "**`context: fork`** — runs the skill in an isolated sub-agent so verbose output stays contained and the main conversation stays clean. Essential for codebase analysis, brainstorming, any noisy exploratory task. Without it, skill output floods the context window.",
+            "**`allowed-tools`** — restricts which tools the skill can use (a security boundary): a read-only analysis skill should not have Write or Bash.",
+            "**`argument-hint`** — prompts the developer for required parameters when invoked without arguments."
+          ]
+        },
+        {
+          "type": "code",
+          "lang": "yaml",
+          "body": "---\ncontext: fork\nallowed-tools:\n  - Read\n  - Grep\n  - Glob\nargument-hint: \"Provide a feature description or area of the codebase to analyse\"\n---"
+        },
+        {
+          "type": "callout",
+          "kind": "warn",
+          "text": "**Skills vs CLAUDE.md** (tested directly): Skills are **on-demand, task-specific workflows** — their descriptions stay in context so Claude knows they exist, but the body loads only when invoked (explicitly via `/name`, or auto when the description/`paths` matches). CLAUDE.md (and `.claude/rules/`) are **always-loaded** standards. Don't put task-specific procedures in CLAUDE.md; don't put always-on reference material in a skill. For always-on conventions on a file type, use path-scoped `.claude/rules/` — not a skill."
+        },
+        {
+          "type": "p",
+          "text": "Personal customisation: create variants in `~/.claude/skills/` with a **different name** (e.g. `/deep-analyse`) so they don't conflict with the team's `/analyse`. Putting a team-shared command in a user path is the classic scoping error."
+        }
+      ]
+    },
+    {
+      "heading": "3.3 — Path-Specific Rules for Conditional Convention Loading",
+      "body": [
+        {
+          "type": "p",
+          "text": "Path-specific rules apply conventions **conditionally based on which files you edit** — solving what neither root nor directory CLAUDE.md handle: conventions for a *file type spread across many directories*. Rule files live in `.claude/rules/` with YAML frontmatter `paths` glob patterns; the rules load only when you edit matching files."
+        },
+        {
+          "type": "code",
+          "lang": "yaml",
+          "body": "---\npaths: [\"**/*.test.ts\", \"**/*.test.tsx\", \"**/*.spec.ts\"]\n---\n# Test Conventions\n- Use describe/it blocks with sentence-like names\n- Each file needs a happy path and an error case\n- Use factory functions for test data, not inline literals\n- Mock at the module boundary; assert behaviour, not implementation"
+        },
+        {
+          "type": "callout",
+          "kind": "key",
+          "text": "Glob patterns match **across the entire codebase**: one `**/*.test.tsx` rule covers every test file in every directory. Path-scoped rules are also more **token-efficient** than root CLAUDE.md — they load ONLY when editing matching files, keeping irrelevant conventions (Terraform rules while editing React) out of context."
+        },
+        {
+          "type": "p",
+          "text": "**Why not directory-level CLAUDE.md?** Tests co-located across 50+ directories would need a copy per directory — duplication, drift, and a copy for every new directory. **Why not root CLAUDE.md?** It loads for *every* session regardless of which files you touch, wasting tokens."
+        },
+        {
+          "type": "callout",
+          "kind": "warn",
+          "text": "Both skills and `.claude/rules/` can auto-activate via a `paths` field, but they differ: **rules stay in context as background guidance shaping every matching edit; skills load on-demand as task-style workflows.** When the question asks about automatic, always-on convention loading for a file type, the answer is **path-specific rules**, not a skill, not a per-directory CLAUDE.md, not root CLAUDE.md."
+        }
+      ]
+    },
+    {
+      "heading": "3.4 — Plan Mode vs Direct Execution",
+      "body": [
+        {
+          "type": "p",
+          "text": "Two modes. **Plan mode** is for complex tasks needing exploration and design before changes: large-scale/architectural restructuring, multiple valid approaches, multi-file modifications (e.g. a 45-file migration), or codebase exploration. Claude reads and analyses *without modifying files*. **Direct execution** is for well-understood, limited-scope changes where the approach is already known: a single-file bug fix with a clear stack trace, a validation conditional, a config value."
+        },
+        {
+          "type": "callout",
+          "kind": "key",
+          "text": "The decision is about **ambiguity, not difficulty**. A *difficult but well-defined* bug fix (clear stack trace, single function, known cause) is direct execution. A *simple-sounding* feature that could be built three ways and touches multiple modules is plan mode."
+        },
+        {
+          "type": "p",
+          "text": "The **Explore subagent** isolates verbose discovery output (file listings, dependency graphs, excerpts) from the main conversation — it runs exploration in isolation and returns summaries, keeping the main context clean for implementation."
+        },
+        {
+          "type": "p",
+          "text": "The **hybrid: plan THEN execute** is common and tested — plan mode to investigate/design, then direct execution to implement file-by-file. Example: a logging-library migration across 30 files — plan the migration pattern and edge cases, then apply it consistently."
+        },
+        {
+          "type": "callout",
+          "kind": "warn",
+          "text": "Trap: starting in direct execution and switching to plan mode only **if** complexity emerges. When the requirements already state the task is complex (\"restructure the monolith into microservices\"), choose plan mode **upfront** — the complexity is stated, not speculative."
+        }
+      ]
+    },
+    {
+      "heading": "3.5 — Iterative Refinement Techniques",
+      "body": [
+        {
+          "type": "p",
+          "text": "Working with Claude Code is iterative; there's a clear **technique hierarchy** for guiding it to the right result:"
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "**Concrete input/output examples** — most effective when prose is interpreted inconsistently. 2–3 before/after pairs let the model generalise more reliably than any prose. The *first* thing to reach for on inconsistent interpretation.",
+            "**Test-driven iteration** — most effective for complex transformations with many edge cases. Write tests first (happy path, edge cases, perf), then share the failures: \"Expected X, got Y\" is unambiguous feedback.",
+            "**Interview pattern** — most effective in unfamiliar domains: have Claude ask clarifying questions before implementing, surfacing considerations (cache invalidation, TTL, consistency, failure modes) you'd miss."
+          ]
+        },
+        {
+          "type": "callout",
+          "kind": "key",
+          "text": "Don't confuse the techniques: the **interview pattern** is for *unfamiliar domains* (you might miss considerations); **concrete examples** are for when you *know the exact transformation* but the model interprets it inconsistently. Different problems, different fixes."
+        },
+        {
+          "type": "p",
+          "text": "**Batch vs sequential feedback**: deliver fixes in a **single message when they interact** (e.g. error-code field + structured logging of it + SDK type changes — the model needs all constraints at once). Iterate **sequentially when issues are independent** (naming vs indentation) so batching doesn't confuse which feedback applies where."
+        },
+        {
+          "type": "callout",
+          "kind": "warn",
+          "text": "Trap: refining the *prose* with more precise language when the model interprets it inconsistently. More precise prose still relies on interpretation — the answer is **concrete examples first**, not better prose. Two or three well-chosen examples (standard case + a key edge case) are enough; you don't need every case."
+        }
+      ]
+    },
+    {
+      "heading": "3.6 — CI/CD Integration",
+      "body": [
+        {
+          "type": "p",
+          "text": "In CI, Claude Code becomes an automated review/generation engine. Claude Code defaults to **interactive mode**; in a pipeline there's no keyboard, so without the right flag the job **hangs forever** waiting for input."
+        },
+        {
+          "type": "callout",
+          "kind": "key",
+          "text": "The **`-p` (`--print`) flag** runs Claude Code non-interactively: it processes the prompt, prints to stdout, and exits. This is the single most directly-tested fact in Domain 3 (sample Q10). When a CI job hangs with logs showing Claude waiting for input, the answer is **`-p`** — NOT `CLAUDE_HEADLESS=true` (doesn't exist), NOT `--batch` (doesn't exist), NOT stdin redirection from /dev/null."
+        },
+        {
+          "type": "code",
+          "lang": "bash",
+          "body": "# WRONG -- hangs in CI\nclaude \"Analyse this pull request for security issues\"\n\n# CORRECT -- non-interactive print mode\nclaude -p \"Analyse this pull request for security issues\""
+        },
+        {
+          "type": "p",
+          "text": "**Structured output**: `--output-format json` forces JSON; `--json-schema` enforces a specific structure, so automated systems can parse findings, post them as inline PR comments at exact file/line, filter by severity, and track across runs."
+        },
+        {
+          "type": "callout",
+          "kind": "warn",
+          "text": "**Session context isolation**: the same session that generated code is weaker at reviewing it — it retains the reasoning that justified its choices. Use an **independent review invocation** (separate `claude -p`, no shared context) to evaluate code on its own merits. Connects to Domain 4 (multi-instance review) and Domain 5 (context management)."
+        },
+        {
+          "type": "p",
+          "text": "**Incremental review context**: include prior findings and instruct Claude to report only *new* or *still-unaddressed* issues — otherwise every push re-reports the same comments and developers stop reading them. **CLAUDE.md for CI**: Claude reads it in CI too, so testing standards, fixtures, and review criteria there make generated output follow team patterns instead of boilerplate; include existing tests to avoid duplicate suggestions."
+        },
+        {
+          "type": "callout",
+          "kind": "warn",
+          "text": "**Batch API vs real-time**: the Message Batches API saves ~50% but has up to 24-hour processing and no latency SLA. **Pre-merge (blocking) checks → real-time/synchronous** (developers wait). **Overnight debt reports, weekly audits, nightly test generation → Batch API** (latency-tolerant). Using Batch for a blocking pre-merge check is the trap (sample Q11)."
+        }
+      ]
+    }
+  ],
+  "examFocus": [
+    "The scoping pattern everywhere: .claude/ (project, shared via git) vs ~/.claude/ (user, personal).",
+    "CLAUDE.md is concatenated guidance, not precedence; hard rules go in settings.json or hooks. /memory diagnoses, doesn't load.",
+    "Diagnosing the new-team-member trap: conventions stuck in user-level config instead of project-level.",
+    "The guide's \"@import syntax\" is literally just @ + a path on its own line (no reserved \"import\" word); imports load eagerly; use .claude/rules/ to actually shrink context.",
+    "Skills (on-demand workflows) vs CLAUDE.md/.claude/rules (always-on); context: fork, allowed-tools, argument-hint.",
+    "Path-specific rules with glob patterns for a file type across many directories — token-efficient, conditional loading.",
+    "Plan vs direct by ambiguity not difficulty; plan-then-execute hybrid; Explore subagent; choose plan upfront for stated complexity.",
+    "Refinement hierarchy: examples-before-prose, test-driven for complex, interview for unfamiliar; batch interacting fixes, sequence independent ones.",
+    "CI: the -p flag for non-interactive; JSON + json-schema output; independent review session; incremental context; Batch vs real-time."
+  ],
+  "quickRef": [
+    "Project = .claude/ (shared via git). User = ~/.claude/ (personal). Same pattern for CLAUDE.md, skills, rules.",
+    "CLAUDE.md = concatenated guidance, conflicts may resolve arbitrarily. Hard enforcement → settings.json (client-enforced) or hooks.",
+    "settings.json precedence: managed > local > project > user (managed always wins).",
+    "\"@import syntax\" = @ + path, no literal import keyword; inlines eagerly. Shrink context with path-scoped .claude/rules/, not imports.",
+    "/memory reveals loaded memory files; it does not load them.",
+    "New-member inconsistency → conventions in ~/.claude/CLAUDE.md; move to project .claude/CLAUDE.md.",
+    ".claude/skills/ (canonical) == .claude/commands/ (alias). Frontmatter: context:fork, allowed-tools, argument-hint.",
+    "Skills = on-demand workflows; CLAUDE.md/.claude/rules = always-on. Don't swap them.",
+    "Path rules: .claude/rules/*.md with paths globs; load only for matching files; cover a type across many dirs.",
+    "Plan vs direct = ambiguity, not difficulty. Plan-then-execute for migrations. Explore subagent isolates discovery.",
+    "Refinement: examples-first (inconsistent prose) · tests (complex) · interview (unfamiliar). Batch interacting, sequence independent.",
+    "CI: -p / --print (non-interactive) · --output-format json + --json-schema · independent review session · incremental findings · Batch API only for non-blocking."
+  ]
+}

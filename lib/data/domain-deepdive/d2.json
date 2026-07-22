@@ -1,0 +1,233 @@
+{
+  "number": 2,
+  "weight": "~18%",
+  "title": "Tool Design & MCP Integration",
+  "tagline": "Designing tool interfaces, error contracts, distribution, MCP servers, and built-in tool usage so agents select and recover reliably.",
+  "why": "Most tool-design failures are *interface* failures, not model failures. The exam rewards the **low-effort, high-leverage** fix every time: **better descriptions before routing classifiers, scoped access before full access, community servers before custom builds.** It also tests precise distinctions — access failure vs valid empty result, `auto`/`any`/forced `tool_choice`, project vs user MCP scope, and Grep (contents) vs Glob (paths).",
+  "sections": [
+    {
+      "heading": "2.1 — Tool Interface Design",
+      "body": [
+        {
+          "type": "p",
+          "text": "**Tool descriptions are the PRIMARY mechanism LLMs use for tool selection** — not supplementary metadata. The model reads the descriptions to decide which tool to call. Minimal descriptions like \"Retrieves customer information\" leave it unable to differentiate overlapping tools."
+        },
+        {
+          "type": "p",
+          "text": "A production-grade description includes five elements:"
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "**What the tool does** — its primary purpose, stated unambiguously.",
+            "**What inputs it expects** — data types, formats, constraints, required vs optional fields.",
+            "**Example queries it handles well** — concrete use cases that anchor understanding.",
+            "**Edge cases and limitations** — what it does NOT do, and behaviour outside expected ranges.",
+            "**Explicit boundaries** — when to use THIS tool vs similar tools in the same toolkit."
+          ]
+        },
+        {
+          "type": "code",
+          "lang": "text",
+          "body": "// Minimal (causes misrouting)\nget_customer: \"Retrieves customer information\"\nlookup_order:  \"Retrieves order details\"\n\n// Production-grade (reliable selection)\nget_customer: \"Looks up a customer account by email, phone, or customer ID.\n  Returns profile (name, contact, account status, loyalty tier). Use to verify\n  who the customer is. Do NOT use for order queries — use lookup_order.\"\nlookup_order: \"Retrieves order details by order number (#NNNNN) or tracking ID.\n  Returns status, items, shipping, refund eligibility. Use for a specific order.\n  Do NOT use for identity verification — use get_customer.\""
+        },
+        {
+          "type": "callout",
+          "kind": "key",
+          "text": "When misrouting occurs, the first fix is **always to improve descriptions** — not few-shot examples, not a routing classifier, not tool consolidation. The exam consistently favours low-effort, high-leverage fixes."
+        },
+        {
+          "type": "callout",
+          "kind": "warn",
+          "text": "Three wrong fixes for misrouting: **few-shot examples** (token overhead, treats symptoms), **routing classifier** (over-engineered first step; bypasses the model's NLU), and **tool consolidation** (valid long-term, but more effort than expanding descriptions). Also: **keyword-sensitive system-prompt wording** (e.g. \"always check customer details\") can silently override good tool descriptions — review prompts after editing descriptions."
+        },
+        {
+          "type": "p",
+          "text": "**Tool splitting**: replace a generic `analyze_document` with purpose-specific tools (`extract_data_points`, `summarize_content`, `verify_claim_against_source`), each with a narrow described purpose. **Tool renaming**: when two names are confusingly similar, rename (e.g. `analyze_content` → `extract_web_results`) to eliminate overlap at the interface level without changing implementation."
+        }
+      ]
+    },
+    {
+      "heading": "2.2 — Structured Error Responses",
+      "body": [
+        {
+          "type": "p",
+          "text": "When an MCP tool fails, its error response decides whether the agent recovers intelligently or flails. Generic messages like \"Operation failed\" are useless. The MCP protocol provides the **`isError` flag** to signal failure, so the model reasons about recovery rather than treating error text as a successful result."
+        },
+        {
+          "type": "p",
+          "text": "Every failure falls into one of **four categories**, each with a different recovery strategy:"
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "**Transient** (timeouts, service unavailable, rate limits) — request is valid; `isRetryable: true`, retry after a brief delay.",
+            "**Validation** (bad format, missing fields, out-of-range) — request is malformed; `isRetryable: true`, fix the input and retry.",
+            "**Business** (policy violations, limit exceedances) — technically valid but violates a rule; `isRetryable: false`, take an alternative path / escalate. Retrying always fails.",
+            "**Permission** (access denied, bad credentials) — `isRetryable: false`, escalate or use different credentials."
+          ]
+        },
+        {
+          "type": "code",
+          "lang": "json",
+          "body": "{\n  \"isError\": true,\n  \"content\": [{ \"type\": \"text\", \"text\": \"Refund exceeds policy limit\" }],\n  \"errorCategory\": \"business\",\n  \"isRetryable\": false,\n  \"description\": \"Refund of \\u00a3750 exceeds the \\u00a3500 automatic limit. Requires manager approval. Escalate to a human agent with the refund details.\"\n}"
+        },
+        {
+          "type": "callout",
+          "kind": "key",
+          "text": "**Access failure vs valid empty result** is the most-tested distinction in the domain. *Access failure*: the tool could not reach the data source (timeout/auth/down) → `isError: true`, maybe retry. *Valid empty result*: the query ran successfully and found nothing → `isError: false`, `resultCount: 0`, do NOT retry. Confusing them breaks recovery — an agent retrying a successful empty query is the canonical anti-pattern."
+        },
+        {
+          "type": "code",
+          "lang": "json",
+          "body": "// Valid empty result — NOT an error\n{ \"isError\": false,\n  \"content\": [{ \"type\": \"text\", \"text\": \"No customer found matching that email. Query ran successfully, no matches.\" }],\n  \"resultCount\": 0 }\n\n// Access failure — IS an error\n{ \"isError\": true,\n  \"content\": [{ \"type\": \"text\", \"text\": \"Could not reach customer database\" }],\n  \"errorCategory\": \"transient\", \"isRetryable\": true,\n  \"description\": \"Connection timed out after 5s. The query did not execute.\" }"
+        },
+        {
+          "type": "callout",
+          "kind": "warn",
+          "text": "**Multi-agent error propagation**: local recovery with selective propagation. Subagents retry transient failures locally; only propagate what can't be resolved locally; include partial results and what was attempted (\"3 of 5 sources succeeded; 4 and 5 timed out\"). Never silently suppress errors by returning empty results as success, and never terminate the whole workflow on a single failure."
+        }
+      ]
+    },
+    {
+      "heading": "2.3 — Tool Distribution & Tool Choice",
+      "body": [
+        {
+          "type": "p",
+          "text": "The **number of tools** an agent has directly affects selection reliability. Giving one agent **18 tools** degrades selection; the **optimal range is 4–5 tools per agent, scoped to its role**. It's about relevance too: a synthesis agent with `web_search` may run its own searches instead of using provided results, duplicating work and wasting context. Each agent gets only the tools its role needs — nothing more."
+        },
+        {
+          "type": "p",
+          "text": "The **`tool_choice`** parameter has three settings:"
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "**`auto`** (default) — the model decides whether to call a tool or return text. For general operation needing conversational flexibility.",
+            "**`any`** — the model MUST call a tool but chooses which. Guarantees structured output from one of several schemas (e.g. invoice/receipt/contract extraction when the type is unknown).",
+            "**Forced** (`{type:'tool', name:'extract_metadata'}`) — the model MUST call a specific named tool. Enforces a mandatory first step; the model can't skip or reorder it. Switch to `auto` on later turns."
+          ]
+        },
+        {
+          "type": "code",
+          "lang": "json",
+          "body": "{ \"tool_choice\": { \"type\": \"auto\" } }                         // model decides\n{ \"tool_choice\": { \"type\": \"any\" } }                          // must call some tool\n{ \"tool_choice\": { \"type\": \"tool\", \"name\": \"extract_metadata\" } } // must call this one"
+        },
+        {
+          "type": "callout",
+          "kind": "key",
+          "text": "Optimal is **4–5 tools per agent, scoped to its role**. For a high-frequency simple operation, add a **scoped cross-role tool** directly to the agent that needs it — this avoids coordinator round-trip latency for the common case."
+        },
+        {
+          "type": "p",
+          "text": "**Scoped cross-role tools**: routing every cross-role request through the coordinator adds 2–3 round trips and can raise latency 40%+. If a synthesis agent verifies simple facts often (85% are millisecond lookups), give it a scoped `verify_fact` for the simple case; complex verifications (multi-source, cross-referencing) still route through the coordinator."
+        },
+        {
+          "type": "callout",
+          "kind": "warn",
+          "text": "**Least privilege for tools**: replace a generic `fetch_url` (fetches anything) with a constrained `load_document` that validates document URLs only — prevents misuse, clarifies purpose, reduces side effects. And don't use `tool_choice:'auto'` when you require structured output (use `any` or forced)."
+        }
+      ]
+    },
+    {
+      "heading": "2.4 — MCP Server Integration",
+      "body": [
+        {
+          "type": "p",
+          "text": "MCP servers connect Claude to external systems (databases, APIs, dev tools, issue trackers). Configuration exists at **two scopes**:"
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "**Project-level `.mcp.json`** — in the repo root, **version-controlled, shared** with everyone who clones/pulls. For servers the whole team needs (Jira, GitHub, internal connectors).",
+            "**User-level `~/.claude.json`** — in the home directory, **personal, NOT version-controlled, NOT shared.** For experimental/personal servers you're testing before proposing to the team."
+          ]
+        },
+        {
+          "type": "callout",
+          "kind": "key",
+          "text": "Project-level `.mcp.json` is version-controlled and shared; user-level `~/.claude.json` is personal and not shared. Use `${ENV_VAR}` syntax to keep credentials out of version control. All tools from all configured servers (both scopes) are discovered at connection time and available simultaneously — no manual activation step."
+        },
+        {
+          "type": "code",
+          "lang": "json",
+          "body": "{\n  \"mcpServers\": {\n    \"github\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@modelcontextprotocol/server-github\"],\n      \"env\": { \"GITHUB_TOKEN\": \"${GITHUB_TOKEN}\" }\n    }\n  }\n}"
+        },
+        {
+          "type": "p",
+          "text": "**Environment-variable expansion** (`${VARIABLE_NAME}`) keeps secrets out of git: the file references variable names, not values, so it's safe to commit; each developer sets their own tokens locally; token rotation needs no config change; no secrets leak through history."
+        },
+        {
+          "type": "p",
+          "text": "**MCP resources** expose content catalogs (issue summaries, documentation hierarchies, database schemas) to agents *without* exploratory tool calls. Instead of `list_tables` then `describe_table` per table, a schema resource makes that available immediately. Resources give *visibility* into data; tools let agents *act* on it."
+        },
+        {
+          "type": "callout",
+          "kind": "warn",
+          "text": "**Build vs use**: evaluate **community servers first** for standard integrations (Jira, GitHub, Slack, Linear, Notion). Build custom **only** for team-specific workflows, custom business logic, or proprietary systems with no community server. \"Evaluate community servers first\" is always correct for a standard integration. Also: **enhance sparse MCP tool descriptions** — otherwise the agent prefers built-in tools (like Grep) it understands better, even when the MCP tool is more capable."
+        }
+      ]
+    },
+    {
+      "heading": "2.5 — Built-in Tools",
+      "body": [
+        {
+          "type": "p",
+          "text": "Claude Code provides six built-in tools: **Read, Write, Edit, Bash, Grep, Glob**. Using the wrong one wastes time, context tokens, or both."
+        },
+        {
+          "type": "callout",
+          "kind": "key",
+          "text": "The core distinction: **Grep searches file CONTENTS** (function callers, error messages, imports). **Glob matches file PATHS** by naming pattern (`**/*.test.tsx`, `**/config.*`). In one sentence: Grep finds what is INSIDE files; Glob finds files by their NAMES."
+        },
+        {
+          "type": "code",
+          "lang": "text",
+          "body": "// Grep — contents\nGrep: \"processLegacyOrder\"            // files that CALL the function\nGrep: \"import.*from 'utils/auth'\"     // files that import a module\n\n// Glob — paths\nGlob: \"**/*.test.tsx\"                  // all test files\nGlob: \"content/domains/**/*.mdx\"       // MDX files in a directory"
+        },
+        {
+          "type": "p",
+          "text": "**Read / Write / Edit**: `Edit` performs targeted modifications via unique text matching — fast and precise. If the `old_string` matches multiple places, Edit fails by design (a safety mechanism). The documented recovery is to **widen `old_string` with surrounding context** until it pins down one location, or set **`replace_all: true`** for a global change. **Read + Write** (load whole file, write it back) is the **last resort**, not the next step — it burns a file's worth of tokens for what's usually a one-line change."
+        },
+        {
+          "type": "callout",
+          "kind": "warn",
+          "text": "Two penalised escalations: defaulting to **Read + Write for every modification** (use Edit first), and **jumping straight to Read + Write the moment Edit reports a non-unique match** (widen the anchor or use `replace_all` first)."
+        },
+        {
+          "type": "p",
+          "text": "**Incremental codebase understanding**: never read all files upfront (a context-budget killer). Discover progressively — **Grep to find entry points → Read to follow imports and trace flows → Grep again to trace usage → Read only what each prior step justified.**"
+        },
+        {
+          "type": "callout",
+          "kind": "key",
+          "text": "The deprecation scenario: **Grep → Glob → Grep again.** Grep for the function name (direct callers + tests that import it), Glob for sibling test files (`**/OrderProcessor.test.*`) to catch tests that exercise it indirectly through the source module, then Grep for wrapper names to catch transitive coverage. Not Glob first — Glob matches paths, not contents."
+        }
+      ]
+    }
+  ],
+  "examFocus": [
+    "Fixing tool misrouting by improving descriptions first — rejecting few-shot, routing classifiers, and consolidation as the first step.",
+    "Writing production-grade descriptions (purpose, inputs, examples, edge cases, boundaries) and watching for system-prompt keyword conflicts.",
+    "The four error categories and their isRetryable values; business/permission errors are never retryable.",
+    "Access failure (isError:true) vs valid empty result (isError:false, resultCount:0) — and not retrying successful empty queries.",
+    "4–5 tools per agent scoped to role; scoped cross-role tools to avoid coordinator round-trips.",
+    "tool_choice auto vs any vs forced — and using any/forced (not auto) when structured output is required.",
+    "Project (.mcp.json, shared) vs user (~/.claude.json, personal) MCP scope; ${ENV_VAR} for credentials; community-servers-first.",
+    "Grep (contents) vs Glob (paths); Edit-first with anchor-widening/replace_all before Read+Write; incremental discovery."
+  ],
+  "quickRef": [
+    "Misrouting fix order: improve descriptions → (only later) consolidate/route. Never few-shot/classifier first.",
+    "Good description = purpose + inputs/formats + example queries + edge cases + explicit boundaries.",
+    "Review system prompts for keyword-sensitive wording that overrides tool descriptions.",
+    "Error categories: transient (retry) · validation (fix+retry) · business (no retry, escalate) · permission (no retry, escalate).",
+    "`isError:true` = failure; valid empty result = `isError:false` + `resultCount:0`. Don't retry a successful empty query.",
+    "Multi-agent errors: recover locally, propagate selectively, include partial results + what was attempted.",
+    "4–5 tools per agent, scoped to role. Add a scoped cross-role tool for high-frequency simple ops.",
+    "tool_choice: auto (decide) · any (must call some tool) · {type:'tool',name} (must call that tool).",
+    "Least privilege: constrained load_document over generic fetch_url.",
+    ".mcp.json = project, shared, version-controlled. ~/.claude.json = user, personal. Use ${ENV_VAR}.",
+    "Community MCP servers first; build custom only for team-specific/proprietary needs. Enhance sparse MCP descriptions.",
+    "Grep = file contents. Glob = file paths. Edit first → widen anchor / replace_all → Read+Write last. Deprecation: Grep→Glob→Grep."
+  ]
+}

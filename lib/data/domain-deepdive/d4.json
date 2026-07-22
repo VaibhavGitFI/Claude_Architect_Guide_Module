@@ -1,0 +1,238 @@
+{
+  "number": 4,
+  "weight": "~20%",
+  "title": "Prompt Engineering & Structured Output",
+  "tagline": "Explicit criteria, schema-guaranteed output, validation-retry loops, few-shot examples, batch economics, and multi-instance review.",
+  "why": "This domain rewards **specificity over vagueness** and **structure over hope**. Recurring themes: explicit categorical criteria beat \"be conservative\"; `tool_use` schemas kill *syntax* errors but not *semantic* ones; retries fix format/structure but can't invent missing data; **few-shot examples are the first fix for inconsistency**; the **Batch API** is 50%-cheaper but only for latency-tolerant work; and **independent instances + multi-pass review** beat self-review and bigger context windows.",
+  "sections": [
+    {
+      "heading": "4.1 — System Prompts with Explicit Criteria",
+      "body": [
+        {
+          "type": "p",
+          "text": "The biggest production prompt mistake is **vague instructions**. \"Be conservative,\" \"only report high-confidence findings,\" \"use your best judgement\" give the model no actionable decision boundary — which is exactly why the exam uses them as distractors."
+        },
+        {
+          "type": "p",
+          "text": "The fix is **explicit categorical criteria** defining precisely what to flag and what to skip. For a code-review pipeline, replace \"Review this code. Be conservative.\" with: *\"Flag comments only when claimed behaviour contradicts actual code behaviour. Report bugs and security vulnerabilities. Skip minor style preferences and local patterns.\"*"
+        },
+        {
+          "type": "callout",
+          "kind": "key",
+          "text": "Explicit categorical criteria always outperform vague instructions. Define what to flag (bugs, security) and what to skip (style, local patterns) using **concrete code examples for each severity level**. Never rely on \"be conservative\" or confidence-based filtering as the primary mechanism."
+        },
+        {
+          "type": "p",
+          "text": "**The false-positive trust problem**: a high false-positive rate in *one* category destroys trust in *all* categories — if \"documentation mismatch\" is wrong 40% of the time, developers stop reading your 98%-accurate \"security\" findings too. Trust bleeds across the whole output."
+        },
+        {
+          "type": "callout",
+          "kind": "warn",
+          "text": "Counterintuitive fix: **temporarily disable** the high-false-positive category to restore system-wide trust immediately, then iterate on its criteria with concrete code examples and re-enable once precision improves. This prioritises system-wide trust over category completeness — it is not abandoning the category."
+        },
+        {
+          "type": "p",
+          "text": "**Severity calibration needs code examples, not prose.** \"Issues that could cause system failures\" forces interpretation; a concrete `query = f\"SELECT * FROM users WHERE id = {user_input}\"` labelled *Critical* removes ambiguity and produces consistent classification across invocations."
+        },
+        {
+          "type": "callout",
+          "kind": "warn",
+          "text": "Why confidence-based filtering fails: **LLM self-reported confidence is poorly calibrated** — often confident about wrong findings, uncertain about right ones. The hierarchy is **explicit criteria first, confidence-based routing second** (routing is covered in 4.6). Never skip the first step."
+        }
+      ]
+    },
+    {
+      "heading": "4.2 — Structured Output with Tool Use",
+      "body": [
+        {
+          "type": "p",
+          "text": "For guaranteed schema-compliant output there's a clear reliability hierarchy: **`tool_use` with JSON schemas** (eliminates JSON syntax errors entirely) **> prompt-based JSON** (can produce malformed JSON). Prompt-based extraction has no structural guarantees and will periodically produce unparseable output in production."
+        },
+        {
+          "type": "p",
+          "text": "**`tool_choice` has three modes**: `\"auto\"` (model decides tool vs text), `\"any\"` (must call *some* tool — use for guaranteed structured output when the document type is unknown across multiple schemas), and `{\"type\":\"tool\",\"name\":\"...\"}` (must call that specific tool — forces a mandatory step)."
+        },
+        {
+          "type": "callout",
+          "kind": "key",
+          "text": "`tool_use` with JSON schemas eliminates **syntax** errors but NOT **semantic** errors. Make fields optional/nullable when source documents may lack information — this is the primary defence against fabrication. Use `tool_choice: \"any\"` for guaranteed structured output when the document type is unknown."
+        },
+        {
+          "type": "callout",
+          "kind": "warn",
+          "text": "What `tool_use` does NOT prevent: **sum discrepancies** (line items don't sum to total), **field-placement errors** (a date in an amount field when both are strings), and **fabrication** (inventing values for required fields the source lacks). The schema guarantees *structure*, not *correctness*."
+        },
+        {
+          "type": "code",
+          "lang": "json",
+          "body": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"invoice_number\": { \"type\": \"string\" },\n    \"vendor_name\":    { \"type\": \"string\" },\n    \"payment_terms\":  { \"type\": [\"string\", \"null\"] },\n    \"purchase_order\": { \"type\": [\"string\", \"null\"] }\n  },\n  \"required\": [\"invoice_number\", \"vendor_name\"]\n}"
+        },
+        {
+          "type": "p",
+          "text": "**Schema design for production**: make fields **optional/nullable** so the model can honestly return `null` instead of fabricating; add an **`\"unclear\"` enum value** for genuinely ambiguous cases; add **`\"other\"` + a freeform detail string** for extensible categorisation; and put **format-normalisation rules in the prompt** (the schema enforces structure, the prompt enforces formatting like ISO 8601 dates)."
+        }
+      ]
+    },
+    {
+      "heading": "4.3 — Prompt Chaining & Validation-Retry Loops",
+      "body": [
+        {
+          "type": "p",
+          "text": "Extraction systems fail; the question is how the system responds. The **retry-with-error-feedback** pattern sends three things back to the model: the **original document**, the **failed extraction**, and the **specific validation error**. This is dramatically more effective than naive retries — without the specific error, the model just reproduces the same mistake."
+        },
+        {
+          "type": "callout",
+          "kind": "key",
+          "text": "Retry-with-error-feedback works by sending the original document + the failed extraction + the specific validation error. Retries fix format/structural errors but **cannot create information absent from the source**. Always identify whether a failure is fixable before retrying."
+        },
+        {
+          "type": "p",
+          "text": "**The retry effectiveness boundary** (most-tested here):"
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "**Effective for**: format mismatches (wrong date/currency), structural output errors (wrong fields, bad nesting), misplaced values (data present but extracted to the wrong field), mathematical errors (a missed line item).",
+            "**NOT effective for**: information genuinely absent from the source, data that lives only in an external document not provided, fields needing knowledge the model lacks. Correct action: flag for human review or return `null` (if the schema allows)."
+          ]
+        },
+        {
+          "type": "code",
+          "lang": "json",
+          "body": "{\n  \"line_items\": [\n    { \"description\": \"Widget A\", \"amount\": 150.00 },\n    { \"description\": \"Widget B\", \"amount\": 300.00 }\n  ],\n  \"calculated_total\": 450.00,\n  \"stated_total\": 500.00,\n  \"total_discrepancy\": true\n}"
+        },
+        {
+          "type": "p",
+          "text": "**Self-correction in the schema**: extract `calculated_total` (sum of line items) *and* `stated_total` (document's total) so a mismatch is an automatic discrepancy flag with no external logic; add `conflict_detected` booleans when the document contradicts itself; add `detected_pattern` fields to findings so you can analyse dismissals by pattern and feed a systematic prompt-improvement loop."
+        },
+        {
+          "type": "callout",
+          "kind": "warn",
+          "text": "Two error categories the exam separates: **schema syntax errors** (malformed JSON, missing fields, wrong types) are eliminated by `tool_use` (4.2); **semantic validation errors** (correct JSON, wrong values — bad sums, misplaced values, fabrication) need validation logic + retry loops. `tool_use` solves the first, not the second."
+        }
+      ]
+    },
+    {
+      "heading": "4.4 — Few-Shot Prompting",
+      "body": [
+        {
+          "type": "p",
+          "text": "Few-shot examples are the **most effective technique for consistency** — not more instructions, not confidence thresholds, not temperature. When output is inconsistent, examples are the first tool to reach for. The exam repeatedly pits \"add more instructions\" against \"add few-shot examples\"; the answer is almost always the latter."
+        },
+        {
+          "type": "p",
+          "text": "**Three triggers** for few-shot examples: (1) detailed instructions still produce inconsistent *formatting*; (2) the model makes inconsistent *judgement calls* on ambiguous cases; (3) extraction returns *empty/null* fields for information that exists but appears in an unexpected format (narrative text vs a table)."
+        },
+        {
+          "type": "callout",
+          "kind": "key",
+          "text": "Use **2–4 targeted examples**, and each must **show reasoning**, not just input→output. Reasoning teaches the model the general decision principle so it generalises to novel cases instead of literal pattern-matching. Target the examples at the specific failing scenarios."
+        },
+        {
+          "type": "code",
+          "lang": "text",
+          "body": "Input: \"check my order #12345\"\nSelected tool: lookup_order\nReasoning: The user gives an order number (#12345), a specific\n  identifier, so lookup_order is correct over get_customer. The\n  general principle: specific identifiers route to specific lookup tools."
+        },
+        {
+          "type": "p",
+          "text": "**Hallucination reduction**: examples covering varied document structures (inline citations vs bibliographies, narrative vs tables) teach the model to handle structural variety without inventing data — especially valuable for inconsistently formatted documents. **False-positive reduction**: in code review, examples that show both *what to flag* and *what to ignore* (e.g. benign variable shadowing in a small scope = minor) cut false positives while preserving detection of real issues."
+        },
+        {
+          "type": "callout",
+          "kind": "warn",
+          "text": "Match technique to problem: inconsistent formatting → few-shot; malformed JSON → `tool_use` schemas; fabricated values for missing fields → optional/nullable schema; wrong tool selection → better tool descriptions first, then few-shot; missed info in narrative text → few-shot showing narrative extraction; sum ≠ total → validation-retry loop. Don't answer \"add more detailed instructions\" when detailed instructions already exist."
+        }
+      ]
+    },
+    {
+      "heading": "4.5 — Batch Processing & Prompt Optimisation",
+      "body": [
+        {
+          "type": "p",
+          "text": "The **Message Batches API** is a cost tool with hard constraints: **50% cost savings**, an **up to 24-hour processing window**, **no guaranteed latency SLA**, **no multi-turn tool calling within a single batch request**, and **`custom_id` fields** to correlate request/response pairs."
+        },
+        {
+          "type": "callout",
+          "kind": "key",
+          "text": "The matching rule: **synchronous API for blocking workflows** (someone/something is waiting — pre-merge checks, real-time review) and **Batch API for latency-tolerant workflows** (overnight technical-debt reports, weekly audits, nightly test generation). The trap (sample Q11) is switching *everything* to batch for the savings — keep blocking work synchronous."
+        },
+        {
+          "type": "code",
+          "lang": "ts",
+          "body": "// Synchronous -- a developer is waiting\nawait client.messages.create({ model, max_tokens, messages });\n\n// Batch -- consumed tomorrow morning; correlate via custom_id\nawait client.batches.create({\n  requests: docs.map((doc, i) => ({\n    custom_id: `debt-report-${i}`,\n    params: { model, max_tokens, messages: [{ role: \"user\", content: doc }] }\n  }))\n});"
+        },
+        {
+          "type": "p",
+          "text": "**SLA calculation**: the Batch API guarantees results within 24h, so the final batch must be submitted ≥24h before the deadline. A 30-hour SLA leaves a 6-hour buffer (30 − 24) for collecting/validating inputs; submit fresh batches every 4–6 hours so one is always in flight."
+        },
+        {
+          "type": "p",
+          "text": "**Failure handling** (three steps): identify failures by `custom_id`; **resubmit only the failures** with modifications (chunk oversized docs, simplify prompts, add format-specific examples) — never the whole batch; and **refine prompts on a 5–10 doc sample BEFORE the full batch**. First-pass success dominates cost: 90% on 1,000 docs = 100 retries; 60% = 400 retries (4× the resubmission cost)."
+        },
+        {
+          "type": "callout",
+          "kind": "warn",
+          "text": "Traps: assuming batch results arrive quickly because they often do (there's **no SLA** — design around the 24h max), and using Batch for workflows that need **multi-turn tool calling** mid-request (unsupported — use the synchronous API for those steps)."
+        }
+      ]
+    },
+    {
+      "heading": "4.6 — Multi-Instance Review & Output Validation",
+      "body": [
+        {
+          "type": "p",
+          "text": "When Claude reviews its **own** output in the **same session**, it retains the reasoning chain from generation and tends to *confirm* rather than *challenge* its decisions. An **independent instance** — a separate invocation with no prior reasoning context — evaluates the output fresh and catches subtle issues far more effectively."
+        },
+        {
+          "type": "callout",
+          "kind": "key",
+          "text": "A model reviewing its own output in the same session retains reasoning context and is less likely to question its decisions. Use **independent instances** for review. Split large reviews into **per-file local passes + a cross-file integration pass**. **Calibrate confidence thresholds** against labelled validation sets before using them for routing."
+        },
+        {
+          "type": "callout",
+          "kind": "warn",
+          "text": "The exam's tempting wrong answer: \"switch to a higher-tier model with a larger context window\" to fix multi-file review. **A bigger window does not fix attention quality** — the model still gives uneven attention across files. Also wrong: adding \"please review carefully\" to the same session, or relying on extended thinking within the generating session."
+        },
+        {
+          "type": "p",
+          "text": "**Multi-pass review architecture** addresses attention dilution (detailed feedback on some files, superficial on others, bugs missed, contradictory findings): **Pass 1** analyses each file individually (consistent depth, full attention per file); **Pass 2** receives all per-file findings and checks cross-file issues — data flow between modules, consistent API usage, dependency conflicts, and contradictions among the per-file findings themselves."
+        },
+        {
+          "type": "p",
+          "text": "**Confidence-based routing**: report high-confidence findings directly, route low-confidence findings to human review. The confidence score is the model's *self-assessed certainty*, not measured accuracy — so **calibrate** it against labelled examples and set routing thresholds from that data."
+        },
+        {
+          "type": "callout",
+          "kind": "warn",
+          "text": "Distinguish **raw (uncalibrated) confidence** — unreliable for automated decisions — from **calibrated thresholds** validated against labelled sets, which are suitable for routing. Using uncalibrated confidence for automated decisions is an anti-pattern. The full architecture: generate → independent per-file review → integration review → confidence routing → continuous calibration loop."
+        }
+      ]
+    }
+  ],
+  "examFocus": [
+    "Explicit categorical criteria (with code examples per severity) over vague 'be conservative'/confidence filtering.",
+    "The false-positive trust problem: disable a noisy category to restore system-wide trust, then refine.",
+    "tool_use schemas eliminate JSON syntax errors but not semantic errors; tool_choice auto/any/forced.",
+    "Optional/nullable fields (+ 'unclear'/'other' enums) as the defence against fabrication.",
+    "Retry-with-error-feedback and the retry effectiveness boundary: fix format/structure, can't invent absent data.",
+    "Self-correction schema fields: calculated_total vs stated_total, conflict_detected, detected_pattern.",
+    "Few-shot examples (2-4, with reasoning) as the first fix for inconsistency, hallucination, and false positives.",
+    "Batch API economics: 50% savings, 24h window, no SLA, no multi-turn tools, custom_id; sync for blocking work.",
+    "Independent-instance review + per-file/integration passes; bigger context window does NOT fix attention dilution.",
+    "Calibrated confidence thresholds (labelled sets) vs raw self-reported confidence for routing."
+  ],
+  "quickRef": [
+    "Explicit categorical criteria + code examples per severity. Never 'be conservative' / confidence as primary filter.",
+    "High false positives in one category kill trust in all → disable it, refine with examples, re-enable.",
+    "Output reliability: tool_use JSON schemas > prompt-based JSON. Schema = structure, not correctness.",
+    "tool_choice: auto (decide) · any (some tool — guaranteed structured output, unknown type) · {type:tool,name} (forced).",
+    "Fabrication defence = optional/nullable fields + 'unclear'/'other' enums. Format rules go in the prompt.",
+    "Retry feedback = original doc + failed extraction + specific error. Fixes format/structure, not absent info.",
+    "Schema self-checks: calculated_total vs stated_total, conflict_detected, detected_pattern for dismissal analysis.",
+    "Few-shot: 2-4 examples WITH reasoning; first fix for inconsistent format/judgement/empty-but-present fields.",
+    "Batch API: 50% cheaper, up to 24h, no SLA, no multi-turn tools, custom_id correlation. Sync for blocking work.",
+    "Batch SLA: submit ≥24h before deadline; refine prompts on a 5-10 doc sample; resubmit only failures.",
+    "Review with an independent instance; per-file passes + cross-file integration pass. Bigger window ≠ fix.",
+    "Calibrate confidence against labelled sets before routing; raw self-reported confidence is unreliable."
+  ]
+}

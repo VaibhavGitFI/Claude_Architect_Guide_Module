@@ -1,0 +1,668 @@
+[
+  {
+    "id": "d1-fc-1",
+    "domain": "D1",
+    "front": "What is the authoritative signal for agentic loop control?",
+    "back": "The stop_reason field. tool_use → run tools, append results, continue. end_turn → stop. Never use text-content checks, natural-language parsing, or iteration caps as the primary mechanism."
+  },
+  {
+    "id": "d1-fc-2",
+    "domain": "D1",
+    "front": "Why is checking response.content[0].type == 'text' a bug for loop completion?",
+    "back": "Claude can return text alongside a tool_use block in the same response. Text presence does not indicate completion — use stop_reason."
+  },
+  {
+    "id": "d1-fc-3",
+    "domain": "D1",
+    "front": "What must you do with tool results each loop iteration?",
+    "back": "Append them to the conversation history, so Claude can reason about the new information on the next iteration."
+  },
+  {
+    "id": "d1-fc-4",
+    "domain": "D1",
+    "front": "When is an iteration cap acceptable in an agentic loop?",
+    "back": "Only as a safety net / maximum bound against runaway loops — never as the primary stopping mechanism (stop_reason is primary)."
+  },
+  {
+    "id": "d1-fc-5",
+    "domain": "D1",
+    "front": "What is the multi-agent orchestration architecture the exam tests?",
+    "back": "Hub-and-spoke: a central coordinator (hub) and specialised subagents (spokes). ALL communication flows through the coordinator; subagents never talk directly to each other."
+  },
+  {
+    "id": "d1-fc-6",
+    "domain": "D1",
+    "front": "What context do subagents inherit automatically from the coordinator?",
+    "back": "None. Subagents have fully isolated context — no coordinator system prompt, no prior messages, no other subagents' results, no shared memory. Everything must be passed explicitly."
+  },
+  {
+    "id": "d1-fc-7",
+    "domain": "D1",
+    "front": "A multi-agent report misses entire categories. Where is the root cause?",
+    "back": "The coordinator's task decomposition (too narrow), not the subagents. The fix is broader decomposition."
+  },
+  {
+    "id": "d1-fc-8",
+    "domain": "D1",
+    "front": "What gates the ability to spawn subagents in the Agent SDK?",
+    "back": "The coordinator's allowedTools must include 'Agent' (or its backward-compatible alias 'Task', renamed in SDK v2.1.63). It's a hard binary requirement."
+  },
+  {
+    "id": "d1-fc-9",
+    "domain": "D1",
+    "front": "What are the three context-passing rules?",
+    "back": "(1) Include complete findings from prior agents; (2) use structured formats separating content from metadata (source_url, document_name, page_number); (3) specify goals, not procedures."
+  },
+  {
+    "id": "d1-fc-10",
+    "domain": "D1",
+    "front": "A synthesis agent produces unsourced claims. Cause and fix?",
+    "back": "Cause: the coordinator passed content without structured metadata. Fix: pass metadata alongside content — don't edit the synthesis prompt or give it tool access."
+  },
+  {
+    "id": "d1-fc-11",
+    "domain": "D1",
+    "front": "How do you spawn independent subagents with minimal latency?",
+    "back": "Emit multiple Agent tool calls in a single coordinator response (parallel spawning), rather than one per turn."
+  },
+  {
+    "id": "d1-fc-12",
+    "domain": "D1",
+    "front": "fork_session vs --resume?",
+    "back": "fork_session = independent branches from a shared baseline for divergent exploration. --resume = continue a specific named session. Fork = diverge; resume = continue."
+  },
+  {
+    "id": "d1-fc-13",
+    "domain": "D1",
+    "front": "Prompt-based guidance vs programmatic enforcement?",
+    "back": "Prompt guidance is probabilistic (~90–95%). Programmatic enforcement (hooks, prerequisite gates) is deterministic (100%). Use enforcement when a single failure means financial loss, security breach, or compliance violation."
+  },
+  {
+    "id": "d1-fc-14",
+    "domain": "D1",
+    "front": "What is a prerequisite gate?",
+    "back": "A code-level check that blocks a tool until a prior condition is met (e.g. process_refund blocked until get_customer returns a verified ID). The model cannot bypass it."
+  },
+  {
+    "id": "d1-fc-15",
+    "domain": "D1",
+    "front": "Required fields in a structured human handoff summary?",
+    "back": "Customer ID, conversation summary, root-cause analysis, refund amount (if applicable), and recommended action — because the human has no access to the transcript."
+  },
+  {
+    "id": "d1-fc-16",
+    "domain": "D1",
+    "front": "PostToolUse hook vs tool-call interception hook — direction and purpose?",
+    "back": "PostToolUse runs AFTER execution to normalise/transform data. Interception runs BEFORE execution to block/modify/redirect the call (enforce policy)."
+  },
+  {
+    "id": "d1-fc-17",
+    "domain": "D1",
+    "front": "Why can't a PostToolUse hook block a policy-violating action?",
+    "back": "It runs after the tool executes — by the time it fires, the non-compliant action has already happened. Use a pre-execution interception hook to block."
+  },
+  {
+    "id": "d1-fc-18",
+    "domain": "D1",
+    "front": "What is attention dilution and how do you fix it?",
+    "back": "Processing too many items in one pass lowers attention per item, causing inconsistent depth. Fix with multi-pass architecture: per-item local passes + a cross-item integration pass. NOT a bigger model or stronger prompt."
+  },
+  {
+    "id": "d1-fc-19",
+    "domain": "D1",
+    "front": "Fixed sequential pipeline vs dynamic adaptive decomposition?",
+    "back": "Fixed pipeline (prompt chaining): predetermined ordered steps for predictable/structured tasks. Dynamic decomposition: subtasks generated from discoveries for open-ended/unknown-scope tasks."
+  },
+  {
+    "id": "d1-fc-20",
+    "domain": "D1",
+    "front": "What is the stale context problem?",
+    "back": "Resuming a session after editing files restores old tool results (old file contents). The model reasons from stale data and gives contradictory advice — recommending fixes already made or referencing code that no longer exists."
+  },
+  {
+    "id": "d1-fc-21",
+    "domain": "D1",
+    "front": "Best fix for stale context after modifying 3 of 50 files?",
+    "back": "Fresh start with summary injection + targeted re-analysis of only the 3 changed files. Naive resume (even with re-read) and fork both keep the stale history; full re-exploration is wasteful."
+  },
+  {
+    "id": "d1-fc-22",
+    "domain": "D1",
+    "front": "What are SubagentStart and SubagentStop hooks?",
+    "back": "Lifecycle hooks: SubagentStart fires when a subagent is spawned (log/validate/rate-limit); SubagentStop fires when it returns (validate/sanitise output). Stop hooks in subagent frontmatter auto-convert to SubagentStop."
+  },
+  {
+    "id": "d2-fc-1",
+    "domain": "D2",
+    "front": "What is the PRIMARY mechanism LLMs use for tool selection?",
+    "back": "Tool descriptions. They are not supplementary metadata — the model reads them to decide which tool to call. When misrouting occurs, improve the descriptions first."
+  },
+  {
+    "id": "d2-fc-2",
+    "domain": "D2",
+    "front": "What five elements make a production-grade tool description?",
+    "back": "(1) What it does; (2) expected inputs/formats; (3) example queries it handles well; (4) edge cases/limitations; (5) explicit boundaries vs similar tools (when NOT to use it)."
+  },
+  {
+    "id": "d2-fc-3",
+    "domain": "D2",
+    "front": "Three wrong first fixes for tool misrouting?",
+    "back": "Few-shot examples (token overhead, treats symptoms), a routing classifier (over-engineered, bypasses NLU), and tool consolidation (more effort, long-term choice). Expand descriptions first."
+  },
+  {
+    "id": "d2-fc-4",
+    "domain": "D2",
+    "front": "How can a system prompt cause misrouting even with good descriptions?",
+    "back": "Keyword-sensitive wording (e.g. 'always check customer details') creates unintended tool associations that override the descriptions. Review prompts after editing descriptions."
+  },
+  {
+    "id": "d2-fc-5",
+    "domain": "D2",
+    "front": "What are the four MCP error categories and their retryability?",
+    "back": "Transient (retry), Validation (fix input + retry), Business (NOT retryable — escalate/alternative path), Permission (NOT retryable — escalate/credentials)."
+  },
+  {
+    "id": "d2-fc-6",
+    "domain": "D2",
+    "front": "Access failure vs valid empty result?",
+    "back": "Access failure = tool couldn't reach the source (isError:true, maybe retry). Valid empty result = query ran successfully, no matches (isError:false, resultCount:0, do NOT retry). Confusing them wastes retries."
+  },
+  {
+    "id": "d2-fc-7",
+    "domain": "D2",
+    "front": "What does the MCP isError flag do?",
+    "back": "It signals to the model that the tool execution failed, so the model reasons about recovery instead of treating error text as a normal successful result."
+  },
+  {
+    "id": "d2-fc-8",
+    "domain": "D2",
+    "front": "How should errors propagate in a multi-agent system?",
+    "back": "Local recovery with selective propagation: subagents retry transient failures locally; only propagate what can't be resolved; include partial results and what was attempted. Never suppress errors as success or kill the whole workflow on one failure."
+  },
+  {
+    "id": "d2-fc-9",
+    "domain": "D2",
+    "front": "How many tools per agent, and why?",
+    "back": "4–5 tools per agent, scoped to its role. Selection reliability degrades as the toolkit grows (18 tools is too many), and out-of-role tools invite misuse."
+  },
+  {
+    "id": "d2-fc-10",
+    "domain": "D2",
+    "front": "tool_choice: auto vs any vs forced?",
+    "back": "auto = model decides (text or tool). any = must call SOME tool (guarantees structured output, model picks the schema). forced {type:'tool',name} = must call that specific tool (enforces a mandatory first step)."
+  },
+  {
+    "id": "d2-fc-11",
+    "domain": "D2",
+    "front": "When do you use a scoped cross-role tool?",
+    "back": "When an agent frequently needs a capability from another role for a simple, high-frequency case. Give it a constrained version directly (e.g. synthesis agent's verify_fact for the 85% simple lookups), routing only complex cases through the coordinator — avoids 2-3 round trips / ~40% latency."
+  },
+  {
+    "id": "d2-fc-12",
+    "domain": "D2",
+    "front": "Apply least privilege to tools — example?",
+    "back": "Replace a generic fetch_url (fetches anything) with a constrained load_document that validates document URLs only. Prevents misuse, clarifies purpose, reduces side effects."
+  },
+  {
+    "id": "d2-fc-13",
+    "domain": "D2",
+    "front": ".mcp.json vs ~/.claude.json?",
+    "back": ".mcp.json = project root, version-controlled, shared with the team (team-wide servers). ~/.claude.json = home directory, personal, NOT shared (experimental/personal servers). Tools from both are available simultaneously."
+  },
+  {
+    "id": "d2-fc-14",
+    "domain": "D2",
+    "front": "How do you keep MCP credentials out of version control?",
+    "back": "Use ${VARIABLE_NAME} env-var expansion in .mcp.json. The file references variable names (safe to commit); each developer sets values locally; rotation needs no config change."
+  },
+  {
+    "id": "d2-fc-15",
+    "domain": "D2",
+    "front": "What are MCP resources for?",
+    "back": "Exposing content catalogs (issue summaries, doc hierarchies, DB schemas) to agents WITHOUT exploratory tool calls. Resources give visibility into data; tools let agents act on it — fewer wasted calls."
+  },
+  {
+    "id": "d2-fc-16",
+    "domain": "D2",
+    "front": "Build a custom MCP server or use a community one?",
+    "back": "Evaluate community servers first for standard integrations (Jira, GitHub, Slack, Linear, Notion). Build custom only for team-specific workflows, custom business logic, or proprietary systems with no community server."
+  },
+  {
+    "id": "d2-fc-17",
+    "domain": "D2",
+    "front": "Why might an agent prefer Grep over a more capable MCP tool, and the fix?",
+    "back": "Sparse MCP descriptions lose to rich built-in descriptions the model understands better. Fix: enhance the MCP tool description with capabilities, outputs, and when to use it instead of the built-in."
+  },
+  {
+    "id": "d2-fc-18",
+    "domain": "D2",
+    "front": "Grep vs Glob?",
+    "back": "Grep searches file CONTENTS (function callers, error messages, imports). Glob matches file PATHS by naming pattern (**/*.test.tsx). Grep = inside files; Glob = file names."
+  },
+  {
+    "id": "d2-fc-19",
+    "domain": "D2",
+    "front": "When does Edit fail, and what's the recovery order?",
+    "back": "Edit fails when old_string matches multiple places (a safety mechanism). Recovery: (1) widen old_string with surrounding context, or (2) set replace_all:true; (3) Read+Write only as a last resort — it burns tokens."
+  },
+  {
+    "id": "d2-fc-20",
+    "domain": "D2",
+    "front": "Correct tool sequence for the deprecation scenario?",
+    "back": "Grep → Glob → Grep again. Grep the function name (direct callers + tests importing it), Glob sibling test files (**/Caller.test.*) for indirect tests, then Grep wrapper names for transitive coverage. Not Glob first."
+  },
+  {
+    "id": "d2-fc-21",
+    "domain": "D2",
+    "front": "Right vs wrong way to understand a large codebase?",
+    "back": "Wrong: read all files upfront (context-budget killer). Right: incremental discovery — Grep entry points → Read to trace flows → Grep usage → Read only what each step justifies."
+  },
+  {
+    "id": "d3-fc-1",
+    "domain": "D3",
+    "front": "What are the three CLAUDE.md levels?",
+    "back": "User (~/.claude/CLAUDE.md, personal, not in git), Project (.claude/CLAUDE.md or root CLAUDE.md, version-controlled, shared), Directory (subdirectory CLAUDE.md, that directory only)."
+  },
+  {
+    "id": "d3-fc-2",
+    "domain": "D3",
+    "front": "Is CLAUDE.md a strict-precedence config?",
+    "back": "No. All discovered files are concatenated into context (not overriding). Load order is broadest -> most specific, but conflicting rules may resolve arbitrarily. It's a user message with no guarantee of strict compliance."
+  },
+  {
+    "id": "d3-fc-3",
+    "domain": "D3",
+    "front": "Where do you put a rule that MUST hold every run?",
+    "back": "settings.json (client-enforced, precedence managed>local>project>user) or a hook (fixed lifecycle event). CLAUDE.md shapes behaviour but is not a hard enforcement layer."
+  },
+  {
+    "id": "d3-fc-4",
+    "domain": "D3",
+    "front": "What is the CLAUDE.md \"@import syntax\"?",
+    "back": "Just @ followed by a path on its own line (e.g. @./standards/naming.md) — there is no literal \"import\" keyword to type, that's just the name the guide uses for the feature. Imports inline eagerly, so they don't reduce context size."
+  },
+  {
+    "id": "d3-fc-5",
+    "domain": "D3",
+    "front": "What does /memory do?",
+    "back": "Reveals which memory/configuration files are currently loaded (a diagnostic). It does NOT load or activate files — configuration loads automatically by level and location."
+  },
+  {
+    "id": "d3-fc-6",
+    "domain": "D3",
+    "front": "New team member gets inconsistent Claude behaviour — root cause and fix?",
+    "back": "Conventions live in a veteran's user-level ~/.claude/CLAUDE.md (not shared via git). Fix: move them to project-level .claude/CLAUDE.md so they're shared on clone."
+  },
+  {
+    "id": "d3-fc-7",
+    "domain": "D3",
+    "front": "What's the Claude Code scoping pattern?",
+    "back": ".claude/ = project, shared via git. ~/.claude/ = user, personal. Same for CLAUDE.md, commands/skills, and rules."
+  },
+  {
+    "id": "d3-fc-8",
+    "domain": "D3",
+    "front": "Are .claude/skills/ and .claude/commands/ different?",
+    "back": "Yes, for exam purposes: .claude/commands/<name>.md is a plain-markdown slash command (project- or user-scoped); .claude/skills/<name>/SKILL.md adds YAML frontmatter (context: fork, allowed-tools, argument-hint), a supporting-files dir, and auto-discovery by description. (Real-world footnote: since Jan 2026 Claude Code treats commands as a legacy path into the same Skills engine — but the guide tests them as two separate things to know.)"
+  },
+  {
+    "id": "d3-fc-9",
+    "domain": "D3",
+    "front": "What do the three SKILL.md frontmatter options do?",
+    "back": "context: fork = isolated sub-agent (keeps verbose output out of main context). allowed-tools = restrict tools (security boundary). argument-hint = prompt for required parameters."
+  },
+  {
+    "id": "d3-fc-10",
+    "domain": "D3",
+    "front": "Skills vs CLAUDE.md / .claude/rules?",
+    "back": "Skills are on-demand, task-specific workflows (descriptions in context, body loads on invocation). CLAUDE.md and .claude/rules are always-loaded standards. Don't swap them."
+  },
+  {
+    "id": "d3-fc-11",
+    "domain": "D3",
+    "front": "When do you use context: fork?",
+    "back": "For verbose/exploratory skills (codebase analysis, brainstorming) so their output stays in an isolated sub-agent and doesn't flood the main context window."
+  },
+  {
+    "id": "d3-fc-12",
+    "domain": "D3",
+    "front": "Best approach for conventions on a file type spread across 50+ directories?",
+    "back": "A path-specific rule in .claude/rules/ with YAML frontmatter paths globs (e.g. ['**/*.test.tsx']). One file, universal coverage, loads only for matching files."
+  },
+  {
+    "id": "d3-fc-13",
+    "domain": "D3",
+    "front": "Why are path-scoped rules more token-efficient than root CLAUDE.md?",
+    "back": "They load only when you edit files matching their glob patterns, so irrelevant conventions don't consume tokens. Root CLAUDE.md loads every session regardless."
+  },
+  {
+    "id": "d3-fc-14",
+    "domain": "D3",
+    "front": "Plan mode vs direct execution — what's the deciding factor?",
+    "back": "Ambiguity, not difficulty. Plan: architectural/multi-approach/multi-file/exploration. Direct: well-scoped, known approach (e.g. single-file fix with a clear stack trace)."
+  },
+  {
+    "id": "d3-fc-15",
+    "domain": "D3",
+    "front": "What is the plan-then-execute hybrid?",
+    "back": "Plan mode to investigate and design the strategy, then direct execution to implement it file by file. Common for library migrations across many files."
+  },
+  {
+    "id": "d3-fc-16",
+    "domain": "D3",
+    "front": "What does the Explore subagent do?",
+    "back": "Runs verbose codebase discovery in isolation and returns summaries to the main conversation, keeping the main context clean for implementation."
+  },
+  {
+    "id": "d3-fc-17",
+    "domain": "D3",
+    "front": "First fix when Claude interprets a prose transformation inconsistently?",
+    "back": "Concrete input/output examples (2-3 before/after pairs). The model generalises from examples more reliably than from prose. Not 'more precise prose'."
+  },
+  {
+    "id": "d3-fc-18",
+    "domain": "D3",
+    "front": "Which refinement technique suits an unfamiliar domain?",
+    "back": "The interview pattern — have Claude ask questions about requirements, edge cases, and constraints before implementing, surfacing considerations you'd miss."
+  },
+  {
+    "id": "d3-fc-19",
+    "domain": "D3",
+    "front": "Batch vs sequential feedback?",
+    "back": "Batch interacting fixes into one message so the model sees all constraints at once. Sequence independent issues one at a time so batching doesn't confuse which feedback applies."
+  },
+  {
+    "id": "d3-fc-20",
+    "domain": "D3",
+    "front": "CI job hangs waiting for input — the fix?",
+    "back": "The -p (--print) flag: process the prompt, print to stdout, exit. NOT CLAUDE_HEADLESS=true or --batch (don't exist) or stdin redirection. (Most directly-tested fact in Domain 3.)"
+  },
+  {
+    "id": "d3-fc-21",
+    "domain": "D3",
+    "front": "How do you make CI output machine-parseable?",
+    "back": "--output-format json forces JSON; --json-schema enforces structure — enabling inline PR comments at exact file/line, severity filtering, and cross-run tracking."
+  },
+  {
+    "id": "d3-fc-22",
+    "domain": "D3",
+    "front": "Why review generated code in an independent session?",
+    "back": "The generating session retains the reasoning that justified its choices and is less likely to question them. An independent reviewer (separate claude -p, no shared context) evaluates the code on its own merits."
+  },
+  {
+    "id": "d3-fc-23",
+    "domain": "D3",
+    "front": "Batch API vs real-time for CI?",
+    "back": "Batch API saves ~50% but has up to 24h processing and no latency SLA. Real-time for blocking pre-merge checks (developers wait); Batch for overnight/weekly non-blocking work."
+  },
+  {
+    "id": "d4-fc-1",
+    "domain": "D4",
+    "front": "What beats vague instructions like 'be conservative' in a system prompt?",
+    "back": "Explicit categorical criteria: define exactly what to flag (bugs, security) and what to skip (style, local patterns), with concrete code examples for each severity level. Vague instructions give no actionable decision boundary."
+  },
+  {
+    "id": "d4-fc-2",
+    "domain": "D4",
+    "front": "What is the false-positive trust problem, and its fix?",
+    "back": "High false positives in ONE category destroy trust in ALL categories (developers ignore accurate findings too). Fix: temporarily disable the noisy category to restore system-wide trust, refine its criteria with code examples, then re-enable."
+  },
+  {
+    "id": "d4-fc-3",
+    "domain": "D4",
+    "front": "Why is severity defined with code examples, not prose?",
+    "back": "Prose like 'could cause system failures' forces interpretation; a labelled concrete pattern (e.g. unsanitised SQL = Critical) removes ambiguity and yields consistent classification across invocations."
+  },
+  {
+    "id": "d4-fc-4",
+    "domain": "D4",
+    "front": "Why does confidence-based filtering fail as a primary mechanism?",
+    "back": "LLM self-reported confidence is poorly calibrated — often confident about wrong findings. Hierarchy: explicit criteria first, confidence-based routing second (after calibration)."
+  },
+  {
+    "id": "d4-fc-5",
+    "domain": "D4",
+    "front": "What's the structured-output reliability hierarchy?",
+    "back": "tool_use with JSON schemas (eliminates JSON syntax errors) > prompt-based JSON (can be malformed). tool_use guarantees structure, not correctness."
+  },
+  {
+    "id": "d4-fc-6",
+    "domain": "D4",
+    "front": "tool_choice: auto vs any vs forced?",
+    "back": "auto = model decides tool or text. any = must call SOME tool (guaranteed structured output, unknown doc type). {type:tool,name} = must call THAT specific tool (mandatory step)."
+  },
+  {
+    "id": "d4-fc-7",
+    "domain": "D4",
+    "front": "What does tool_use NOT prevent?",
+    "back": "Semantic errors: sum discrepancies (line items don't total), field-placement errors, and fabrication of values for required fields the source lacks. The schema guarantees structure, not correctness."
+  },
+  {
+    "id": "d4-fc-8",
+    "domain": "D4",
+    "front": "Primary defence against the model fabricating missing values?",
+    "back": "Make fields optional/nullable when the source may lack them, so the model can honestly return null. Add 'unclear' and 'other'+detail enum values for ambiguity/extensibility."
+  },
+  {
+    "id": "d4-fc-9",
+    "domain": "D4",
+    "front": "What three things make retry-with-error-feedback effective?",
+    "back": "The original document, the failed extraction, and the specific validation error. Without the specific error, the model just reproduces the same mistake."
+  },
+  {
+    "id": "d4-fc-10",
+    "domain": "D4",
+    "front": "The retry effectiveness boundary?",
+    "back": "Retries fix format mismatches, structural errors, misplaced values, and math errors. They CANNOT create information genuinely absent from the source — flag those for human review or return null."
+  },
+  {
+    "id": "d4-fc-11",
+    "domain": "D4",
+    "front": "How do schemas self-detect discrepancies and conflicts?",
+    "back": "Extract calculated_total vs stated_total (mismatch = auto discrepancy flag) and conflict_detected booleans (contradictory source content). detected_pattern fields enable dismissal analysis for prompt refinement."
+  },
+  {
+    "id": "d4-fc-12",
+    "domain": "D4",
+    "front": "Schema syntax errors vs semantic validation errors?",
+    "back": "Syntax errors (malformed JSON, missing fields, wrong types) are eliminated by tool_use. Semantic errors (wrong sums, misplaced/fabricated values) need validation logic + retry loops."
+  },
+  {
+    "id": "d4-fc-13",
+    "domain": "D4",
+    "front": "First fix for inconsistent output (when detailed instructions already exist)?",
+    "back": "Few-shot examples — the most effective consistency technique. Not more instructions, not confidence thresholds, not temperature."
+  },
+  {
+    "id": "d4-fc-14",
+    "domain": "D4",
+    "front": "How many few-shot examples, and what must each include?",
+    "back": "2–4 targeted examples aimed at the failing scenarios, and each must include REASONING (not just input→output) so the model generalises the decision principle to novel cases."
+  },
+  {
+    "id": "d4-fc-15",
+    "domain": "D4",
+    "front": "Three triggers that call for few-shot examples?",
+    "back": "(1) detailed instructions still produce inconsistent formatting; (2) inconsistent judgement on ambiguous cases; (3) empty/null fields for information that exists in an unexpected format (e.g. narrative text)."
+  },
+  {
+    "id": "d4-fc-16",
+    "domain": "D4",
+    "front": "Key facts about the Message Batches API?",
+    "back": "~50% cost savings, up to 24-hour processing window, NO latency SLA, NO multi-turn tool calling in a single request, and custom_id fields to correlate requests/responses."
+  },
+  {
+    "id": "d4-fc-17",
+    "domain": "D4",
+    "front": "Synchronous vs Batch API — the matching rule?",
+    "back": "Synchronous for blocking workflows (someone waiting — pre-merge checks, real-time review). Batch for latency-tolerant workflows (overnight reports, weekly audits, nightly test generation)."
+  },
+  {
+    "id": "d4-fc-18",
+    "domain": "D4",
+    "front": "Correct batch failure handling?",
+    "back": "Identify failures by custom_id and resubmit ONLY those, with modifications (chunk oversized docs, simpler prompts, format-specific examples). Refine prompts on a 5–10 doc sample first — first-pass success dominates cost."
+  },
+  {
+    "id": "d4-fc-19",
+    "domain": "D4",
+    "front": "Why is self-review in the same session weak?",
+    "back": "The generating session retains its reasoning context and tends to confirm rather than challenge its own decisions. Use an independent instance (no prior context) for review."
+  },
+  {
+    "id": "d4-fc-20",
+    "domain": "D4",
+    "front": "Fix for inconsistent multi-file review (attention dilution)?",
+    "back": "Per-file local analysis passes (consistent depth) + a separate cross-file integration pass (data flow, contradictions, API contracts). A larger context window does NOT fix attention quality."
+  },
+  {
+    "id": "d4-fc-21",
+    "domain": "D4",
+    "front": "Raw vs calibrated confidence for routing?",
+    "back": "Raw self-reported confidence is uncalibrated and unreliable for automated decisions. Calibrate thresholds against labelled validation sets (confidence-vs-accuracy), then route low-confidence findings to human review."
+  },
+  {
+    "id": "d4-fc-22",
+    "domain": "D4",
+    "front": "What is the full production review architecture?",
+    "back": "Generate → independent per-file review → cross-file integration review → confidence-based routing (low-confidence to humans) → continuous calibration loop with labelled sets."
+  },
+  {
+    "id": "d5-fc-1",
+    "domain": "D5",
+    "front": "What is the progressive summarisation trap?",
+    "back": "Summarising earlier turns to save tokens systematically destroys critical transactional data — amounts, dates, percentages, order numbers, and customer-stated expectations. The default behaviour for transactional data."
+  },
+  {
+    "id": "d5-fc-2",
+    "domain": "D5",
+    "front": "What is the persistent case facts block?",
+    "back": "A structured block of transactional facts (amounts, dates, order numbers, statuses) included in EVERY prompt, OUTSIDE the summarised history, that is never summarised. The single most important context-management pattern and the fix for progressive summarisation."
+  },
+  {
+    "id": "d5-fc-3",
+    "domain": "D5",
+    "front": "How do you fix the 'lost in the middle' effect?",
+    "back": "Structurally, not with prompts: place a key findings summary at the BEGINNING of aggregated inputs and use explicit section headers. Models process the start and end of long inputs reliably; the middle can be missed."
+  },
+  {
+    "id": "d5-fc-4",
+    "domain": "D5",
+    "front": "Why trim verbose tool results before they enter context?",
+    "back": "Untrimmed results (e.g. 40+ fields when you need 5) consume tokens in every subsequent turn as history accumulates (the API is stateless). Trim to relevant fields in a PostToolUse hook or the tool itself."
+  },
+  {
+    "id": "d5-fc-5",
+    "domain": "D5",
+    "front": "The three valid escalation triggers?",
+    "back": "(1) Customer explicitly requests a human (escalate immediately, no 'let me try first'); (2) policy exceptions/gaps (policy is silent — needs human judgement); (3) inability to make meaningful progress (after actually attempting resolution)."
+  },
+  {
+    "id": "d5-fc-6",
+    "domain": "D5",
+    "front": "The two UNRELIABLE escalation triggers?",
+    "back": "Sentiment-based escalation (frustration doesn't correlate with case complexity) and self-reported confidence scores (poorly calibrated — confident on hard cases, uncertain on easy ones)."
+  },
+  {
+    "id": "d5-fc-7",
+    "domain": "D5",
+    "front": "Policy gap vs policy violation for escalation?",
+    "back": "A gap (policy is silent on the situation) needs escalation for human judgement. A violation (a documented 'no', e.g. refund outside the return window) does NOT need escalation — the agent already has the answer."
+  },
+  {
+    "id": "d5-fc-8",
+    "domain": "D5",
+    "front": "How to handle ambiguous customer matches (e.g. three 'John Smith')?",
+    "back": "Ask for additional identifiers (email, phone, order number). NEVER select by 'most recent' or 'most active' heuristic — that risks privacy violations and wrong-account actions."
+  },
+  {
+    "id": "d5-fc-9",
+    "domain": "D5",
+    "front": "What four elements make up structured error context?",
+    "back": "Failure type (transient/validation/business/permission), what was attempted (tool, query, parameters), partial results gathered before failure, and potential alternative approaches."
+  },
+  {
+    "id": "d5-fc-10",
+    "domain": "D5",
+    "front": "The two error-propagation anti-patterns?",
+    "back": "Silent suppression (returning empty results marked as success — invisible gaps, no recovery — the worst) and workflow termination (killing the whole pipeline on one failure, wasting other agents' completed work)."
+  },
+  {
+    "id": "d5-fc-11",
+    "domain": "D5",
+    "front": "Access failure vs valid empty result?",
+    "back": "Access failure = tool couldn't reach the source (timeout/connection/permission); query didn't execute → consider retry. Valid empty result = query executed and found no matches → that IS the answer; don't retry."
+  },
+  {
+    "id": "d5-fc-12",
+    "domain": "D5",
+    "front": "What are coverage annotations?",
+    "back": "Notes in synthesis output stating which topics are well-supported and which have gaps (e.g. 'geothermal section limited due to unavailable journal access') — far better than silently omitting a topic, which looks like irrelevance."
+  },
+  {
+    "id": "d5-fc-13",
+    "domain": "D5",
+    "front": "What is context degradation, and is it a token-limit problem?",
+    "back": "The model references 'typical patterns' instead of specific classes/methods/dependency chains found earlier, because verbose output buries them. It is NOT a token-limit problem — a bigger context window does not fix it."
+  },
+  {
+    "id": "d5-fc-14",
+    "domain": "D5",
+    "front": "Primary mitigation for context degradation?",
+    "back": "Scratchpad files: write key findings to a file and read it for subsequent questions, persisting knowledge outside the conversation context where it's immune to degradation. Maintain from the start of extended exploration."
+  },
+  {
+    "id": "d5-fc-15",
+    "domain": "D5",
+    "front": "Why delegate codebase exploration to subagents (beyond parallelisation)?",
+    "back": "Context isolation: each subagent explores verbosely in its own context and returns a structured summary, keeping the main agent's context clean for coordination."
+  },
+  {
+    "id": "d5-fc-16",
+    "domain": "D5",
+    "front": "What does /compact do, and when to use it?",
+    "back": "Reduces context usage during long sessions by summarising the conversation while preserving key info. Use it PROACTIVELY to maintain context quality, not just when you hit limits. State manifests handle crash recovery."
+  },
+  {
+    "id": "d5-fc-17",
+    "domain": "D5",
+    "front": "What is the aggregate metrics trap?",
+    "back": "A high overall accuracy (e.g. 97%) hides catastrophic failure on specific segments (handwritten receipts 60%, international 45%) because high-volume easy documents dominate. Always validate by document type AND field before automating."
+  },
+  {
+    "id": "d5-fc-18",
+    "domain": "D5",
+    "front": "Why must confidence scores be calibrated, and how?",
+    "back": "Raw model confidence is relative, not absolute — 0.90 on dates might be 94% accurate but 0.90 on amounts only 82%. Calibrate against labelled validation sets to map confidence to actual accuracy, then set thresholds."
+  },
+  {
+    "id": "d5-fc-19",
+    "domain": "D5",
+    "front": "Why include high-confidence items in stratified sampling?",
+    "back": "Low-confidence items already go to human review; only sampling the high-confidence (automated) items can detect a novel error pattern affecting them. It serves both ongoing accuracy measurement and novel-error detection."
+  },
+  {
+    "id": "d5-fc-20",
+    "domain": "D5",
+    "front": "How should limited reviewer capacity be allocated?",
+    "back": "Prioritise the highest-uncertainty items first (low confidence, ambiguous/contradictory sources, historically poor document types) and order the queue dynamically. Never spread capacity evenly."
+  },
+  {
+    "id": "d5-fc-21",
+    "domain": "D5",
+    "front": "What must a structured claim-source mapping include?",
+    "back": "Claim, source URL, document name, relevant excerpt, and publication date. Attribution dies during summarisation unless the synthesis agent is explicitly told to preserve and merge these mappings."
+  },
+  {
+    "id": "d5-fc-22",
+    "domain": "D5",
+    "front": "How to handle two credible sources that conflict?",
+    "back": "Annotate BOTH values with full source attribution and publication dates and let the consumer decide — never arbitrarily pick the most recent, most authoritative, or the average. Different dates often explain the difference as a trend, not a contradiction."
+  },
+  {
+    "id": "d5-fc-23",
+    "domain": "D5",
+    "front": "Content-appropriate rendering in synthesis?",
+    "back": "Financial data → tables; news/current events → prose; technical findings → structured lists. Flattening everything into one uniform format degrades readability and comprehension."
+  }
+]

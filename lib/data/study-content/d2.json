@@ -1,0 +1,166 @@
+{
+  "title": "Domain 2 — Tool Design & MCP Integration",
+  "weight": "~18%",
+  "summary": "How to design tool interfaces and error contracts, distribute and constrain tools across agents, configure MCP servers at the right scope, and use Claude Code's built-in tools correctly.",
+  "examTips": [
+    "Tool misrouting? <strong>Improve the descriptions first</strong> — reject few-shot, routing classifiers, and consolidation as the first step.",
+    "<strong>Access failure vs valid empty result</strong> is tested directly: never retry a successful query that returned no matches.",
+    "<strong>Business and permission errors are never retryable</strong> — the agent must escalate or take an alternative path.",
+    "Need guaranteed structured output? Use <strong>tool_choice 'any' or forced</strong>, never 'auto'.",
+    "Team-wide MCP servers go in <strong>.mcp.json</strong> (shared); personal ones in <strong>~/.claude.json</strong>. Use <strong>${ENV_VAR}</strong> for secrets.",
+    "<strong>Grep = contents, Glob = paths.</strong> Try Edit first; widen the anchor or use replace_all before falling back to Read + Write."
+  ],
+  "topics": [
+    {
+      "id": "d2.1",
+      "title": "Tool Interface Design",
+      "intro": "Tool descriptions are the primary mechanism for tool selection — write them like production interfaces, not afterthoughts.",
+      "concepts": [
+        "Tool descriptions are THE primary mechanism LLMs use for tool selection, not supplementary metadata.",
+        "A production-grade description has five elements: purpose, expected inputs/formats, example queries, edge cases/limitations, explicit boundaries vs similar tools.",
+        "Tool splitting: replace a broad generic tool with purpose-specific tools that each have a narrow, clearly described purpose.",
+        "Tool renaming: rename confusingly similar tools (e.g. analyze_content -> extract_web_results) to remove overlap at the interface level.",
+        "System prompts can override descriptions: keyword-sensitive instructions create unintended tool associations."
+      ],
+      "antiPatterns": [
+        "Few-shot examples to fix misrouting — token overhead, treats symptoms not the cause.",
+        "A routing classifier as the first step — over-engineered; bypasses the model's NLU.",
+        "Tool consolidation as the first step — valid long-term but more effort than expanding descriptions.",
+        "Ignoring system-prompt wording after updating tool descriptions."
+      ],
+      "deepDive": [
+        "The misrouting problem (exam Q2): get_customer and lookup_order with minimal descriptions ('Retrieves customer information' / 'Retrieves order details') and similar identifier formats cause 'check my order #12345' to route to the wrong tool. The correct first fix is to expand the descriptions to include input formats, example queries, edge cases, and explicit boundaries (when to use this tool vs the other).",
+        "The exam consistently favours low-effort, high-leverage fixes: better descriptions before routing classifiers, scoped access before full access, community servers before custom builds."
+      ],
+      "code": {
+        "title": "Minimal vs production-grade descriptions",
+        "body": "// Minimal (misroutes)\nget_customer: \"Retrieves customer information\"\n\n// Production-grade\nget_customer: \"Looks up a customer by email, phone, or customer ID. Returns\n  profile + account status + loyalty tier. Use to verify who the customer is.\n  Do NOT use for order queries -- use lookup_order.\""
+      },
+      "compare": {
+        "bad": "Add 5-8 few-shot examples of correct tool selection to the system prompt",
+        "good": "Expand each tool description with inputs, examples, edge cases, and boundaries"
+      },
+      "examTip": "When two tools misroute, the answer is expand the descriptions. Few-shot, routing classifier, and consolidation are all distractors as the first step."
+    },
+    {
+      "id": "d2.2",
+      "title": "Structured Error Responses",
+      "intro": "Structured error metadata lets an agent recover intelligently — and distinguishes a failure from a successful empty result.",
+      "concepts": [
+        "The MCP isError flag signals tool failure so the model reasons about recovery instead of treating error text as a success.",
+        "Four error categories: transient (retry), validation (fix input + retry), business (no retry, escalate), permission (no retry, escalate).",
+        "Structured metadata: errorCategory, isRetryable boolean, and a human-readable description enable correct recovery branching.",
+        "Access failure (could not reach the source) is isError:true; valid empty result (queried successfully, no matches) is isError:false + resultCount:0.",
+        "Multi-agent error propagation: recover locally, propagate selectively, include partial results and what was attempted."
+      ],
+      "antiPatterns": [
+        "Retrying when a successful query returned an empty result — it will return empty again.",
+        "Generic messages like 'Operation failed' without errorCategory/isRetryable/description.",
+        "Treating business errors as retryable — the same policy violation applies every time.",
+        "Silently suppressing subagent errors by returning empty results as success."
+      ],
+      "deepDive": [
+        "Access failure vs valid empty result (the most-tested distinction): a tool returns an empty array, the agent retries 3 times then escalates — but the account simply does not exist. The tool succeeded; it just found no matches. Because the response doesn't distinguish 'could not reach the database' from 'reached it and found nothing', the agent treats both as a retriable failure. The fix is to structure responses so a successful-but-empty query looks fundamentally different from a failed query.",
+        "Business errors carry isRetryable:false plus a customer-friendly explanation (e.g. refund exceeds the £500 limit, requires manager approval), so the agent escalates instead of retrying."
+      ],
+      "code": {
+        "title": "Empty result vs access failure",
+        "body": "// Valid empty result -- NOT an error\n{ \"isError\": false, \"resultCount\": 0,\n  \"content\": [{\"type\":\"text\",\"text\":\"No match. Query ran, no results.\"}] }\n\n// Access failure -- IS an error\n{ \"isError\": true, \"errorCategory\": \"transient\", \"isRetryable\": true,\n  \"content\": [{\"type\":\"text\",\"text\":\"Could not reach database (timeout).\"}] }"
+      },
+      "compare": {
+        "bad": "Empty array returned the same way as a timeout -> agent retries 'no results'",
+        "good": "isError:false+resultCount:0 for empty; isError:true+errorCategory for failures"
+      },
+      "examTip": "If an agent wastes retries on a lookup that found nothing, the root cause is that the tool doesn't distinguish access failures from valid empty results."
+    },
+    {
+      "id": "d2.3",
+      "title": "Tool Distribution & Tool Choice",
+      "intro": "Scope 4-5 tools per agent, add scoped cross-role tools for hot paths, and pick the right tool_choice mode.",
+      "concepts": [
+        "Tool selection reliability degrades as the toolkit grows; 18 tools is too many. Optimal range: 4-5 tools per agent, scoped to its role.",
+        "Relevance matters: an agent with out-of-role tools tends to misuse them (e.g. a synthesis agent running its own web searches).",
+        "tool_choice 'auto' = model decides (text or tool); 'any' = must call some tool; forced {type:'tool',name} = must call a specific tool.",
+        "Forced selection enforces a mandatory first step (e.g. extract_metadata before enrichment); switch to 'auto' afterwards.",
+        "Least privilege: replace a generic tool (fetch_url) with a constrained one (load_document that validates document URLs only)."
+      ],
+      "antiPatterns": [
+        "Giving one agent 18 tools and expecting reliable selection.",
+        "Routing all simple verifications through the coordinator when 85% are simple lookups (2-3 round trips, ~40% latency).",
+        "Using tool_choice 'auto' when structured output is required (the model may return text).",
+        "Giving a subagent a generic fetch_url when a constrained load_document would suffice."
+      ],
+      "deepDive": [
+        "Scoped cross-role tool (exam Q9): a synthesis agent returns control to the coordinator for fact verification, adding 2-3 round trips and 40% latency; 85% of verifications are simple lookups. The fix is a scoped verify_fact tool on the synthesis agent for the simple case, routing only complex multi-source verifications through the coordinator.",
+        "Role-specific scoping in a research system: Web Search (search_web, fetch_page, extract_links, save_snippet); Document Analysis (extract_metadata, extract_data_points, summarize_content, verify_claim); Synthesis (compile_report, verify_fact scoped, format_citation, assess_coverage); Coordinator (Agent/Task to spawn subagents, review_output, request_revision)."
+      ],
+      "code": {
+        "title": "tool_choice modes",
+        "body": "{ \"tool_choice\": {\"type\":\"auto\"} }                          // decide freely\n{ \"tool_choice\": {\"type\":\"any\"} }                           // must call SOME tool\n{ \"tool_choice\": {\"type\":\"tool\",\"name\":\"extract_metadata\"} } // must call THAT tool"
+      },
+      "examTip": "High-frequency simple cross-role op with coordinator latency? Add a scoped tool. Need guaranteed structured output? Use 'any' or forced, never 'auto'."
+    },
+    {
+      "id": "d2.4",
+      "title": "MCP Server Integration",
+      "intro": "Scope MCP servers correctly, keep secrets in env vars, expose resources, and prefer community servers.",
+      "concepts": [
+        "Project-level .mcp.json lives in the repo root, is version-controlled, and is shared with the whole team.",
+        "User-level ~/.claude.json lives in the home directory, is personal, and is NOT version-controlled or shared.",
+        "All tools from all configured servers (both scopes) are discovered at connection time and available simultaneously.",
+        "${VARIABLE_NAME} expansion keeps credentials out of version control: the file references names, each dev sets values locally.",
+        "MCP resources expose content catalogs (issue summaries, doc hierarchies, DB schemas) so agents avoid exploratory tool calls."
+      ],
+      "antiPatterns": [
+        "Building a custom MCP server for a standard integration like Jira instead of evaluating community servers first.",
+        "Putting team-wide MCP configuration in ~/.claude.json (personal, not shared).",
+        "Committing credentials directly in .mcp.json instead of using ${ENV_VAR} expansion.",
+        "Leaving MCP tool descriptions sparse, causing the agent to prefer built-in tools like Grep."
+      ],
+      "deepDive": [
+        "Build-vs-use (exam scenario): a team needs Jira integration and a dev proposes building a custom server. The correct first step is to evaluate existing community MCP servers (Jira, GitHub, Slack, Linear, Notion all have maintained ones) and build custom only if they cannot handle team-specific workflows. 'Evaluate community servers first' is always correct for a standard integration.",
+        "Enhancing MCP descriptions: a sparse description ('Searches code') loses to a rich built-in like Grep. A detailed description ('semantic, AST-aware search ... more accurate than text-based grep ... use instead of Grep when searching by intent') gives the model enough context to prefer the more-capable MCP tool."
+      ],
+      "code": {
+        "title": ".mcp.json with env-var expansion",
+        "body": "{\n  \"mcpServers\": {\n    \"github\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@modelcontextprotocol/server-github\"],\n      \"env\": { \"GITHUB_TOKEN\": \"${GITHUB_TOKEN}\" }\n    }\n  }\n}"
+      },
+      "compare": {
+        "bad": "Build a custom Jira MCP server; commit JIRA_TOKEN into .mcp.json",
+        "good": "Use a community Jira server; reference ${JIRA_TOKEN} via env-var expansion"
+      },
+      "examTip": "Team-wide server -> .mcp.json. Personal/experimental -> ~/.claude.json. Standard integration -> community server first. Secrets -> ${ENV_VAR}."
+    },
+    {
+      "id": "d2.5",
+      "title": "Built-in Tools",
+      "intro": "Six tools (Read, Write, Edit, Bash, Grep, Glob): pick Grep for contents, Glob for paths, Edit before Read+Write.",
+      "concepts": [
+        "Grep searches file CONTENTS for patterns (function callers, error messages, imports).",
+        "Glob matches file PATHS by naming pattern (**/*.test.tsx, **/config.*). Grep = inside files; Glob = file names.",
+        "Edit makes targeted changes via unique text matching; it fails by design if old_string matches multiple places.",
+        "On a non-unique Edit match: widen old_string with surrounding context, or set replace_all:true for a global change. Read+Write is the last resort.",
+        "Incremental discovery: Grep entry points -> Read to trace flows -> Grep usage -> Read only what's justified. Never read all files upfront."
+      ],
+      "antiPatterns": [
+        "Using Glob to find function callers (Glob matches paths, not contents).",
+        "Using Grep to find files by extension/naming pattern (Glob is purpose-built for paths).",
+        "Reading all source files upfront before knowing what's relevant (context-budget killer).",
+        "Defaulting to Read+Write for every modification, or jumping to it the moment Edit reports a non-unique match."
+      ],
+      "deepDive": [
+        "The deprecation scenario (exam): find all callers of processLegacyOrder AND their test files. Correct sequence is Grep -> Glob -> Grep again: Grep the function name (direct callers + tests importing it), Glob sibling test files (**/OrderProcessor.test.*) to catch tests that exercise it indirectly through the source module, then Grep wrapper names (e.g. applyLegacyOrder) for transitive coverage. Glob-first is wrong because Glob matches paths, not contents.",
+        "Tracing across wrapper/barrel modules: Grep the definition -> Read the defining file for exported names -> Grep each exported name across the codebase -> if re-exported through a barrel (index.ts), Grep the barrel module name to find indirect consumers a single search would miss."
+      ],
+      "code": {
+        "title": "Grep (contents) vs Glob (paths)",
+        "body": "Grep: \"processLegacyOrder\"     // CONTENTS: who calls the function\nGlob: \"**/*.test.tsx\"          // PATHS: all test files\n\n// Edit recovery on non-unique match:\n//   1) widen old_string with surrounding context\n//   2) or replace_all: true\n//   3) Read + Write only as last resort"
+      },
+      "compare": {
+        "bad": "Glob '*processLegacyOrder*' to find callers, then Read all test files",
+        "good": "Grep 'processLegacyOrder' for callers, then Glob '**/Caller.test.*' for tests"
+      },
+      "examTip": "Searching inside files = Grep. Finding files by name = Glob. Modifying = Edit first (widen anchor / replace_all before Read+Write). Deprecation trace = Grep -> Glob -> Grep."
+    }
+  ]
+}

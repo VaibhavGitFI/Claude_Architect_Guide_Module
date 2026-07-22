@@ -1,0 +1,212 @@
+{
+  "number": 5,
+  "weight": "~15%",
+  "title": "Context Management & Reliability",
+  "tagline": "Keeping critical facts alive in context, escalating wisely, propagating errors honestly, and preserving provenance through synthesis.",
+  "why": "This domain is about what makes a system **trustworthy in production**: don't let summarisation eat transactional facts; escalate on the *three valid triggers* (not sentiment or self-confidence); propagate **structured** errors instead of suppressing or crashing; treat **context degradation** as an attention problem (not a token-count one); never trust **aggregate accuracy**; and keep **claim→source provenance** alive through every synthesis step.",
+  "sections": [
+    {
+      "heading": "5.1 — Context Window Management",
+      "body": [
+        {
+          "type": "p",
+          "text": "Reliable multi-turn systems live or die by what goes into the context window. The **progressive summarisation trap**: summarising earlier turns to free tokens systematically destroys the most critical information — numerical values, dates, percentages, order numbers, customer-stated expectations. \"Refund of $247.83 for order #8891 placed March 3rd\" becomes \"customer wants a refund for a recent order.\""
+        },
+        {
+          "type": "callout",
+          "kind": "key",
+          "text": "The **persistent case facts block** is the single most important pattern here: extract transactional facts (amounts, dates, order numbers, statuses) into a structured block included in **every** prompt, **outside** the summarised history — it is never summarised. This is the fix for progressive summarisation and the foundation for reliable multi-turn systems."
+        },
+        {
+          "type": "code",
+          "lang": "json",
+          "body": "{\n  \"caseFactsBlock\": {\n    \"customerId\": \"C-4421\",\n    \"issues\": [{\n      \"orderId\": \"#8891\",\n      \"orderDate\": \"2024-03-03\",\n      \"refundAmount\": \"$247.83\",\n      \"status\": \"pending_refund\"\n    }]\n  }\n}"
+        },
+        {
+          "type": "p",
+          "text": "**Lost in the middle**: models process the beginning and end of long inputs reliably but may miss findings buried in the middle. The fix is **structural, not prompt-based** — place a *Key Findings Summary* at the **start** of aggregated inputs and use explicit section headers throughout. Telling the model to \"pay attention to everything\" doesn't work."
+        },
+        {
+          "type": "callout",
+          "kind": "warn",
+          "text": "**Tool-result trimming**: an order lookup returning 40+ fields when you need 5 burns tokens every subsequent turn as history grows. Trim verbose tool outputs to relevant fields **before** they enter the conversation (in a PostToolUse hook or the tool itself) — once verbose data is in context, it stays for every turn. The API is **stateless** (each request must include full history), so trimming + the case-facts block beat truncating the history."
+        },
+        {
+          "type": "p",
+          "text": "**Upstream agent optimisation**: have upstream agents return **structured data** (key facts, citations, relevance scores, dates) instead of verbose reasoning chains a downstream agent can't use — saving tokens *and* enabling synthesis without re-parsing prose."
+        }
+      ]
+    },
+    {
+      "heading": "5.2 — Escalation & Ambiguity Resolution",
+      "body": [
+        {
+          "type": "p",
+          "text": "Miscalibrated escalation directly destroys first-contact resolution. There are exactly **three valid escalation triggers**:"
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "**Customer explicitly requests a human** — honour it *immediately*, no \"let me try first.\" An absolute rule with no exceptions.",
+            "**Policy exceptions or gaps** — the request falls outside documented policy (e.g. competitor price-matching when policy covers only own-site). Gaps need human judgement. (A *violation* with a documented answer, like a refund outside the return window, does NOT need escalation.)",
+            "**Inability to make meaningful progress** — the agent actually attempted resolution and cannot advance (tool errors local retries can't fix, missing access, a bug needing engineering). \"I might not handle this\" is not enough — it must have tried."
+          ]
+        },
+        {
+          "type": "callout",
+          "kind": "warn",
+          "text": "**Two unreliable triggers** the exam tests as anti-patterns: **sentiment-based escalation** (frustration doesn't correlate with complexity — a furious customer with a late delivery is easy; a calm customer with a policy gap needs a human) and **self-reported confidence scores** (poorly calibrated — confident on hard cases, uncertain on easy ones)."
+        },
+        {
+          "type": "p",
+          "text": "**The frustration nuance**: a frustrated customer with a *resolvable* issue → acknowledge and resolve (don't escalate). If they *reiterate* wanting a human after you offer help → escalate. If they ask for a human *from the start* → escalate immediately, no investigation."
+        },
+        {
+          "type": "callout",
+          "kind": "key",
+          "text": "Three valid triggers (explicit human request, policy *gaps*, inability to progress); two unreliable ones (sentiment, self-confidence). For **ambiguous customer matches**, never pick by 'most recent'/'most active' heuristic — that risks privacy violations and wrong-account actions; the only safe response is to **ask for additional identifiers** (email, phone, order number)."
+        },
+        {
+          "type": "p",
+          "text": "The proportionate fix for poor escalation calibration is **explicit escalation criteria with few-shot examples in the system prompt** — prompt optimisation before infrastructure like classifier models or sentiment analysis."
+        }
+      ]
+    },
+    {
+      "heading": "5.3 — Error Propagation in Multi-Agent Systems",
+      "body": [
+        {
+          "type": "p",
+          "text": "How a subagent's failure flows back to the coordinator decides whether the system recovers or fails silently. A failing subagent must return **structured error context** with four elements: **failure type** (transient/validation/business/permission), **what was attempted** (tool, query, parameters), **partial results** gathered before failure, and **potential alternative approaches**."
+        },
+        {
+          "type": "code",
+          "lang": "json",
+          "body": "{\n  \"status\": \"partial_failure\",\n  \"failureType\": \"transient\",\n  \"attemptedAction\": { \"tool\": \"search_academic_db\", \"query\": \"renewable energy policy\" },\n  \"partialResults\": [{ \"title\": \"EU Renewable Energy Directive 2023\", \"retrieved\": true }],\n  \"alternativeApproaches\": [\"Narrow the date range\", \"Try government_publications\", \"Use cached results\"]\n}"
+        },
+        {
+          "type": "callout",
+          "kind": "warn",
+          "text": "**Two anti-patterns**: **silent suppression** — returning empty results marked as success (the worst: the coordinator thinks the search ran and found nothing, never retries, and silently omits a whole research area — invisible gaps); and **workflow termination** — killing the entire pipeline on one failure, throwing away the other agents' completed work. The correct middle ground is structured error propagation."
+        },
+        {
+          "type": "callout",
+          "kind": "key",
+          "text": "Structured error context (failure type, attempted action, partial results, alternatives) enables intelligent coordinator recovery. **Access failure** (couldn't reach the source — timeout/connection/permission; query didn't execute) → consider retry. **Valid empty result** (query executed, no matches) → that IS the answer, don't retry. Conflating them means either never retrying when you should, or wasting retries on a query that always returns nothing."
+        },
+        {
+          "type": "p",
+          "text": "**Coverage annotations**: when synthesising, note which topics are well-supported and which have gaps (\"geothermal section limited due to unavailable journal access\") — far better than silently omitting a topic, which looks like irrelevance rather than an unavailable source. **Local recovery first**: subagents retry transient failures locally (with fallbacks) and only propagate what they can't resolve, always including what was attempted and any partial results — this keeps coordinator complexity down."
+        }
+      ]
+    },
+    {
+      "heading": "5.4 — Codebase Exploration & Context Degradation",
+      "body": [
+        {
+          "type": "p",
+          "text": "**Context degradation** shows up as the model referencing *\"typical patterns\"* instead of the specific classes, methods, and dependency chains it discovered earlier — because verbose discovery output accumulates and pushes precise earlier findings out of attention."
+        },
+        {
+          "type": "callout",
+          "kind": "key",
+          "text": "Context degradation is **NOT a token-limit problem** — a bigger context window doesn't fix it; the model loses grip on specific details as verbose output buries them. The primary mitigation is **scratchpad files**: write key findings to a file and read it for subsequent questions, persisting knowledge *outside* the conversation context where it's immune to degradation. Maintain them from the start of any extended exploration, not as a fallback."
+        },
+        {
+          "type": "p",
+          "text": "**Subagent delegation** is the second mitigation — and it's about **context isolation**, not just parallelisation. Delegate specific questions (\"find all test files for the order service and report coverage\") to subagents that explore verbosely in their own isolated context and return a structured summary, keeping the main agent's context clean for coordination."
+        },
+        {
+          "type": "p",
+          "text": "**Summary injection between phases**: summarise Phase 1 findings and inject them into Phase 2 subagent prompts, preventing the cold-start problem where Phase 2 re-explores what Phase 1 already found. The **`/compact`** command reduces context usage during long sessions — use it **proactively** to maintain context *quality*, not just when you hit limits."
+        },
+        {
+          "type": "callout",
+          "kind": "warn",
+          "text": "**Crash recovery via structured state manifests**: each agent exports its state (explored paths, key findings, current phase, next steps) to a known file. On resume, the coordinator loads the manifest and injects it so the agent continues without repeating work. Restarting a session to fix degradation **without** saving state loses all accumulated knowledge."
+        }
+      ]
+    },
+    {
+      "heading": "5.5 — Human Review & Confidence Calibration",
+      "body": [
+        {
+          "type": "p",
+          "text": "Human review is the safety net; the challenge is allocating limited reviewer capacity to maximise accuracy at minimum cost. The biggest misconception is the **aggregate metrics trap**: a system reports 97% overall accuracy, so the team automates all high-confidence extractions — but the aggregate **hides catastrophic per-segment failure** (standard invoices 99.5%, handwritten receipts 60%, scanned PDFs 72%, international formats 45%). High-volume easy segments mask the rest."
+        },
+        {
+          "type": "callout",
+          "kind": "key",
+          "text": "97% aggregate accuracy can hide 40%+ error rates on specific document types. **Always validate accuracy by document type AND field segment** before automating — never on aggregate metrics alone. Raw model confidence is **not calibrated**: 0.90 on dates might be 94% accurate but 0.90 on amounts only 82% — calibrate against **labelled validation sets** before using confidence to route."
+        },
+        {
+          "type": "p",
+          "text": "**Stratified random sampling**: sample a representative set from each stratum (document type, confidence band, field) for human verification — and crucially **sample high-confidence extractions too**, not just low-confidence ones. Low-confidence items already go to humans; only sampling high-confidence automated items catches a *novel* error pattern affecting them. It serves ongoing accuracy measurement *and* novel-error detection."
+        },
+        {
+          "type": "callout",
+          "kind": "warn",
+          "text": "**Reviewer capacity prioritisation**: route the **highest-uncertainty items first** (low confidence, ambiguous/contradictory sources, historically poor document types), and order the queue **dynamically**. Do NOT spread reviewer capacity evenly — that wastes time on items the model handles well and starves the uncertain ones that actually need human judgement."
+        },
+        {
+          "type": "p",
+          "text": "The correct sequence: (1) measure accuracy by document type and field, (2) calibrate confidence with labelled sets, (3) set calibrated thresholds, (4) add stratified sampling for ongoing verification, and **only then** (5) reduce human review on segments with consistent, validated accuracy. Jumping to step 5 on aggregate metrics is the trap."
+        }
+      ]
+    },
+    {
+      "heading": "5.6 — Information Provenance & Multi-Source Synthesis",
+      "body": [
+        {
+          "type": "p",
+          "text": "Provenance — knowing where every claim comes from and how much to trust it — separates a trustworthy research system from plausible fiction. Every finding must carry a **structured claim-source mapping**: claim, source URL, document name, relevant excerpt, and publication date."
+        },
+        {
+          "type": "code",
+          "lang": "json",
+          "body": "{\n  \"claim\": \"Global renewable energy investment reached $495 billion in 2023\",\n  \"sourceUrl\": \"https://example.com/iea-report-2024\",\n  \"documentName\": \"IEA World Energy Investment Report 2024\",\n  \"relevantExcerpt\": \"...reached approximately $495 billion in calendar year 2023...\",\n  \"publicationDate\": \"2024-06-15\"\n}"
+        },
+        {
+          "type": "callout",
+          "kind": "warn",
+          "text": "**Attribution dies during summarisation** — a synthesis agent paraphrases findings into \"investment has grown significantly\" with no amount, source, or date unless explicitly instructed to preserve and merge claim-source mappings through every step. The most common failure point is the synthesis step."
+        },
+        {
+          "type": "callout",
+          "kind": "key",
+          "text": "When two credible sources **conflict**, never arbitrarily pick one (not 'most recent', not an average, not 'most authoritative') — **annotate both values with full attribution and dates** and let the consumer decide. And **temporal awareness**: different publication/data-collection dates often explain different numbers — 8% (2023) and 12% (2024) is a *trend*, not a contradiction. Require dates in all structured outputs."
+        },
+        {
+          "type": "p",
+          "text": "**Content-appropriate rendering**: don't flatten everything into one format — **financial data → tables**, **news/current events → prose**, **technical findings → structured lists**. Reports should distinguish well-established findings (multiple independent sources) from contested ones, preserving source characterisations. When analysis hits conflicting values, **complete the analysis with the conflict intact and annotated** (e.g. audited vs preliminary, fiscal vs calendar year) and leave resolution to the coordinator or consumer."
+        }
+      ]
+    }
+  ],
+  "examFocus": [
+    "Persistent case facts block (never summarised) as the fix for progressive summarisation destroying transactional data.",
+    "Lost-in-the-middle: structural fix (key findings first, section headers), not a prompt reminder. Trim verbose tool results.",
+    "Three valid escalation triggers (explicit human request, policy gaps, inability to progress) vs two unreliable (sentiment, self-confidence).",
+    "Ambiguous customer matches: ask for identifiers, never select by heuristic (privacy risk).",
+    "Structured error context (type, attempted action, partial results, alternatives); avoid silent suppression and workflow termination.",
+    "Access failure (retry) vs valid empty result (don't retry); local recovery first; coverage annotations.",
+    "Context degradation is attention, not tokens — scratchpad files, subagent isolation, /compact, state manifests for crash recovery.",
+    "Aggregate metrics trap: validate by document type AND field; calibrate confidence with labelled sets; sample high-confidence items too.",
+    "Reviewer capacity: prioritise highest-uncertainty items dynamically, not evenly.",
+    "Claim-source provenance survives synthesis only if explicitly preserved; annotate conflicts with both values + dates; content-appropriate rendering."
+  ],
+  "quickRef": [
+    "Progressive summarisation destroys amounts/dates/IDs → persistent case facts block, included every prompt, never summarised.",
+    "Lost in the middle → key findings at the START + section headers (structural, not 'pay attention').",
+    "Trim 40-field tool results to the ~5 you need BEFORE they enter context (PostToolUse hook). API is stateless.",
+    "Escalate on: explicit human request (now), policy GAP (not violation), inability to progress (after trying).",
+    "Don't escalate on sentiment or self-reported confidence. Ambiguous match → ask for identifiers, never heuristic-pick.",
+    "Structured error = failureType + attemptedAction + partialResults + alternativeApproaches.",
+    "Anti-patterns: silent suppression (empty=success) and workflow termination (kill on one failure).",
+    "Access failure → consider retry; valid empty result → don't retry (that IS the answer).",
+    "Context degradation ≠ token limit. Scratchpad files, subagent context isolation, /compact (proactive), state manifests.",
+    "97% aggregate hides per-type failure → validate by document type AND field; calibrate confidence with labelled sets.",
+    "Stratified sampling includes HIGH-confidence items; route highest-uncertainty items to reviewers first, dynamically.",
+    "Provenance: claim + sourceUrl + documentName + excerpt + date. Conflicts → annotate both + dates. Tables/prose/lists per content type."
+  ]
+}

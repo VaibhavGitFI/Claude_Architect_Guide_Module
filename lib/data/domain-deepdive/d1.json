@@ -1,0 +1,312 @@
+{
+  "number": 1,
+  "weight": "~27%",
+  "title": "Agentic Architecture & Orchestration",
+  "tagline": "The control flow, coordination, enforcement, and state management that power production Claude agents.",
+  "why": "This is the largest domain on the exam. It tests whether you can design agents that **terminate reliably**, **coordinate cleanly**, **enforce business rules deterministically**, and **manage state** across long-running work. Most wrong answers here are plausible-sounding prompt fixes for problems that actually require structural or programmatic solutions — the exam rewards recognising that difference.",
+  "sections": [
+    {
+      "heading": "1.1 — Agentic Loops",
+      "body": [
+        {
+          "type": "p",
+          "text": "An **agentic loop** is the core execution cycle that powers every Claude-based agent. It is a *deterministic control flow pattern* — not a prompt trick, not a retry loop, and not a chatbot turn."
+        },
+        {
+          "type": "p",
+          "text": "The loop has four steps, repeated until completion:"
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "Send a request to Claude via the Messages API, including the full conversation history (system prompt, prior messages, and any tool results from the previous iteration).",
+            "Inspect the `stop_reason` field — the authoritative signal for what happens next. The two values relevant to agentic loops are `tool_use` (Claude wants to call tools → continue) and `end_turn` (Claude is finished → terminate).",
+            "If `tool_use`: execute the requested tool(s), append the tool results to the conversation history as a new message, and resend the updated conversation to Claude.",
+            "If `end_turn`: present the final response to the user and stop."
+          ]
+        },
+        {
+          "type": "callout",
+          "kind": "key",
+          "text": "The `stop_reason` field is the *only* reliable signal for loop control — it is deterministic and unambiguous. Never use natural-language parsing, text-content checks, or arbitrary iteration caps as your primary stopping mechanism."
+        },
+        {
+          "type": "p",
+          "text": "The critical detail is step 3: **tool results must be appended to conversation history**. Without this, Claude cannot reason about the new information on the next iteration."
+        },
+        {
+          "type": "code",
+          "lang": "py",
+          "body": "messages = [{\"role\": \"user\", \"content\": user_query}]\nMAX_ITERATIONS = 20  # safety net only, NOT the primary control\n\nfor _ in range(MAX_ITERATIONS):\n    resp = client.messages.create(model=MODEL, tools=TOOLS, messages=messages)\n\n    if resp.stop_reason == \"end_turn\":\n        return final_text(resp)          # done — Claude signalled completion\n\n    if resp.stop_reason == \"tool_use\":\n        messages.append({\"role\": \"assistant\", \"content\": resp.content})\n        tool_results = run_requested_tools(resp)   # may be several tools\n        messages.append({\"role\": \"user\", \"content\": tool_results})\n        # loop continues with the new results in history"
+        },
+        {
+          "type": "p",
+          "text": "In an agentic loop, **Claude decides which tool to call based on context** — model-driven decision-making, as opposed to hard-coded decision trees or fixed tool sequences. The exam favours model-driven approaches for flexibility, with one exception: when business logic requires deterministic compliance (financial, security, regulatory), programmatic enforcement overrides model flexibility (see 1.4)."
+        },
+        {
+          "type": "callout",
+          "kind": "warn",
+          "text": "The three loop-termination anti-patterns the exam tests cold: (1) parsing natural-language signals like \"I'm done\"; (2) using arbitrary iteration caps as the *primary* stopping mechanism; (3) checking `response.content[0].type == \"text\"` — Claude can return text *alongside* tool_use blocks. A fourth trap: forcing `tool_choice` to `\"any\"`, which prevents Claude from ever signalling completion and creates an infinite loop."
+        }
+      ]
+    },
+    {
+      "heading": "1.2 — Multi-Agent Orchestration",
+      "body": [
+        {
+          "type": "p",
+          "text": "Multi-agent orchestration uses a specific architecture the exam tests directly: **hub-and-spoke with a coordinator at the centre**."
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "**Coordinator agent** (the hub): receives the task, decomposes it, decides which subagents to invoke, passes context, aggregates results, handles errors, and routes information.",
+            "**Subagents** (the spokes): each handles a specialised task (web search, document analysis, synthesis, report generation), receiving instructions from and returning results to the coordinator."
+          ]
+        },
+        {
+          "type": "callout",
+          "kind": "key",
+          "text": "**ALL communication flows through the coordinator. Subagents never communicate directly with each other — never**, not for efficiency or convenience. This centralisation gives you observability, consistent error handling, and controlled information flow."
+        },
+        {
+          "type": "p",
+          "text": "The **isolation principle** is the most-tested and most-misunderstood concept here. Subagents do NOT automatically inherit the coordinator's conversation history. A spawned subagent starts with *only* what the coordinator explicitly puts in its prompt — it has no access to the coordinator's system prompt, prior messages, other subagents' results, or any shared memory. Subagents also do not share memory between invocations: calling the same subagent twice gives the second call no knowledge of the first."
+        },
+        {
+          "type": "p",
+          "text": "The coordinator has four key responsibilities: **dynamic subagent selection** (don't route every query through the full pipeline), **research scope partitioning** (assign distinct subtopics to minimise duplication), **iterative refinement loops** (evaluate output for gaps and re-delegate), and **centralised communication routing**."
+        },
+        {
+          "type": "callout",
+          "kind": "warn",
+          "text": "The **narrow-decomposition failure**: when a multi-agent system's output misses entire categories (e.g. a \"renewable energy\" report covering only solar and wind), the root cause is the *coordinator's decomposition*, not the subagents. Trace failures to their origin. The fix is broader coordinator decomposition — not better search queries, a stronger synthesis agent, or more subagents."
+        }
+      ]
+    },
+    {
+      "heading": "1.3 — Subagent Invocation & Context Passing",
+      "body": [
+        {
+          "type": "p",
+          "text": "If 1.2 is the architecture, 1.3 is the wiring. The **Agent tool** (renamed from the **Task tool** in Claude Agent SDK v2.1.63) is the mechanism for spawning subagents. \"Task\" still works as a backward-compatible alias."
+        },
+        {
+          "type": "callout",
+          "kind": "key",
+          "text": "The coordinator's `allowedTools` **must include** `\"Agent\"` (or `\"Task\"`). This is a hard binary gate — without it, the coordinator physically cannot spawn any subagent, regardless of how they are defined."
+        },
+        {
+          "type": "p",
+          "text": "Each subagent is defined by an **AgentDefinition** specifying three things: a **description** (so the coordinator knows when to invoke it), a **system prompt** (its instructions), and **tool restrictions** (tools scoped to its role)."
+        },
+        {
+          "type": "p",
+          "text": "Three rules for effective **context passing**:"
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "**Include complete findings from prior agents** — pass them in full; subagents cannot \"look up\" prior results.",
+            "**Use structured formats that separate content from metadata** — every finding must carry source attribution (URL, document name, page number) or the downstream agent cannot cite it.",
+            "**Specify goals, not procedures** — goal-oriented prompts let subagents adapt; procedural step-by-step instructions constrain them."
+          ]
+        },
+        {
+          "type": "code",
+          "lang": "json",
+          "body": "{\n  \"findings\": [\n    {\n      \"claim\": \"Solar panel efficiency has increased 25% in the last decade\",\n      \"source_url\": \"https://example.com/solar-report\",\n      \"document_name\": \"Annual Solar Industry Report 2024\",\n      \"page_number\": 14,\n      \"confidence\": \"high\",\n      \"retrieved_by\": \"web_search_agent\"\n    }\n  ]\n}"
+        },
+        {
+          "type": "callout",
+          "kind": "warn",
+          "text": "**Attribution failure pattern**: when a synthesis agent produces unsourced claims, the root cause is the coordinator passing content *without* structured metadata — the synthesis agent literally had no source info to include. Don't blame the synthesis prompt or give it direct tool access."
+        },
+        {
+          "type": "p",
+          "text": "**Parallel spawning**: for independent subagent tasks, emit multiple Agent tool calls in a *single* coordinator response rather than one per turn — sequential spawning adds needless latency. Look for answer options mentioning \"in a single response\" or \"simultaneously.\""
+        },
+        {
+          "type": "p",
+          "text": "**fork_session** creates independent branches from a shared analysis baseline (e.g. after analysing a codebase, fork to compare two strategies). Each branch is independent after the split. This is *not* the same as **--resume**, which continues a specific named session. Fork = divergent exploration; resume = continuation."
+        }
+      ]
+    },
+    {
+      "heading": "1.4 — Workflow Enforcement & Handoff",
+      "body": [
+        {
+          "type": "p",
+          "text": "This task draws a hard line between two ways to control agent behaviour:"
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "**Prompt-based guidance** — instructions in the system prompt. Works ~90–95% of the time, but the model is probabilistic, so it has a non-zero failure rate. Fine for low-stakes operations.",
+            "**Programmatic enforcement** — hooks, prerequisite gates, or code-level checks that physically block downstream tools until prerequisites complete. Deterministic: works every time, no matter what the model decides."
+          ]
+        },
+        {
+          "type": "callout",
+          "kind": "key",
+          "text": "Exam decision rule: **if a single failure would cause financial loss, a security breach, or a compliance violation, use programmatic enforcement.** Money / security / compliance → programmatic. Formatting / style / ordering preferences → prompt-based guidance is acceptable."
+        },
+        {
+          "type": "callout",
+          "kind": "warn",
+          "text": "For high-stakes scenarios the exam *always* offers distractors like \"add stronger system-prompt instructions\" or \"include few-shot examples.\" Reject them — they improve probability but never reach a 0% failure rate. Routing classifiers are also wrong here: they handle routing, not per-agent workflow enforcement."
+        },
+        {
+          "type": "p",
+          "text": "A **prerequisite gate** is a programmatic check that blocks a tool until a prior condition is met — e.g. `process_refund` cannot run until `get_customer` has returned a verified customer ID for the session. The gate is code, so the model cannot bypass it by deciding to skip verification."
+        },
+        {
+          "type": "code",
+          "lang": "py",
+          "body": "def process_refund(args, session):\n    if not session.get(\"verified_customer_id\"):\n        return {\"error\": \"Cannot process refund — customer identity \"\n                         \"not verified. Call get_customer first.\"}\n    return do_refund(args[\"customer_id\"], args[\"amount\"])"
+        },
+        {
+          "type": "p",
+          "text": "**Subagent lifecycle hooks**: `SubagentStart` fires when a subagent is spawned (log / validate / rate-limit before it runs); `SubagentStop` fires when it returns (validate / sanitise / transform output before the coordinator uses it). Subagents can also define their own `PreToolUse`/`PostToolUse` hooks scoped to their execution, and `Stop` hooks in a subagent's frontmatter auto-convert to `SubagentStop` events at runtime."
+        },
+        {
+          "type": "p",
+          "text": "**Structured handoff**: when escalating to a human, the handoff summary must be **self-contained** — the human agent does NOT have the conversation transcript. Required fields: **customer ID, conversation summary, root-cause analysis, refund amount (if applicable), and recommended action**. Multi-concern requests should be **decomposed, investigated in parallel using shared context, then resolved in a single unified response** — not handled sequentially or partially."
+        }
+      ]
+    },
+    {
+      "heading": "1.5 — Agent SDK Hooks",
+      "body": [
+        {
+          "type": "p",
+          "text": "Hooks inject **deterministic behaviour** into an otherwise probabilistic system — they are how you implement the programmatic enforcement from 1.4. There are two points in the tool lifecycle:"
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "**PostToolUse hooks** run *after* a tool executes but *before* the model processes the result — used to **transform / normalise data** so the model always sees clean, consistent output.",
+            "**Tool-call interception hooks** run *before* a tool executes — used to **enforce policy**: block, modify, or redirect the call. The tool never runs if the hook blocks it."
+          ]
+        },
+        {
+          "type": "callout",
+          "kind": "key",
+          "text": "Know the direction: **PostToolUse transforms data after execution; tool-call interception enforces policy before execution.** The exam tests this distinction directly."
+        },
+        {
+          "type": "p",
+          "text": "**PostToolUse → data normalisation.** Different MCP tools return different formats (Unix timestamps vs ISO 8601, numeric status codes vs strings, regional date formats). Letting the model interpret heterogeneous formats every iteration introduces inconsistency. A PostToolUse hook normalises everything (dates → ISO 8601, status codes → human-readable strings, currency → consistent decimals) so the model receives clean data every time."
+        },
+        {
+          "type": "p",
+          "text": "**Interception → policy enforcement.** Examples: block `process_refund` above $500 and route to human escalation; block `transfer_funds` until an AML check has passed for the session; route `approve_discount` above 20% to a manager approval queue."
+        },
+        {
+          "type": "callout",
+          "kind": "warn",
+          "text": "The exam offers **PostToolUse as a way to *block* policy-violating actions** — this is wrong. PostToolUse runs *after* execution, so by the time it fires the non-compliant action has already happened. Use **pre-execution interception** to block. Also wrong: relying on the model to normalise data (use PostToolUse instead)."
+        },
+        {
+          "type": "code",
+          "lang": "py",
+          "body": "# PostToolUse: normalise heterogeneous tool output\ndef post_tool_use(tool_name, result):\n    result[\"date\"] = to_iso8601(result.get(\"date\"))\n    result[\"status\"] = STATUS_MAP.get(result.get(\"status\"), result.get(\"status\"))\n    return result\n\n# Pre-execution interception: enforce policy before the tool runs\ndef pre_tool_use(tool_name, args, session):\n    if tool_name == \"process_refund\" and args[\"amount\"] > 500:\n        return Block(\"Refund > $500 requires human approval\")\n    if tool_name == \"transfer_funds\" and not session.get(\"aml_passed\"):\n        return Block(\"AML check required before transfer\")\n    return Allow()"
+        },
+        {
+          "type": "p",
+          "text": "The decision framework: requirements that **must be followed 100% of the time → hooks (deterministic)**; requirements that are **preferred but tolerate occasional deviation → prompts (probabilistic)**."
+        }
+      ]
+    },
+    {
+      "heading": "1.6 — Task Decomposition Strategies",
+      "body": [
+        {
+          "type": "p",
+          "text": "Two decomposition patterns, plus a failure mode the exam loves."
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "**Fixed sequential pipelines (prompt chaining)** — predetermined steps that run in order, each feeding the next. Best for *predictable, structured* tasks (code review, document processing, data extraction, compliance checks). Consistent, reliable, easy to debug and monitor — but cannot adapt to unexpected findings.",
+            "**Dynamic adaptive decomposition** — subtasks generated from what's discovered at each step; the plan evolves. Best for *open-ended* tasks where scope isn't known up front (legacy exploration, security audits, debugging unfamiliar systems). Adaptive and thorough — but less predictable and harder to debug."
+          ]
+        },
+        {
+          "type": "callout",
+          "kind": "key",
+          "text": "Match the pattern to the task characteristics, **not** to what sounds more sophisticated. Steps known in advance → fixed pipeline. Unknown scope, must adapt → dynamic decomposition."
+        },
+        {
+          "type": "p",
+          "text": "**Attention dilution** is the key failure mode: when an agent processes too many items in a single pass, attention per item drops and depth becomes inconsistent — thorough analysis for the first few items, increasingly shallow for later ones, and the same pattern flagged in one file but approved in another."
+        },
+        {
+          "type": "callout",
+          "kind": "warn",
+          "text": "The fix for attention dilution is **architectural, not capability-based**. A bigger model, larger context window, or stronger prompt does NOT fix it. Batching alone also misses cross-item issues. The fix is a **multi-pass architecture**: per-item local passes (each item gets the full attention budget) **plus** a separate cross-item integration pass (for data-flow / consistency issues across items)."
+        },
+        {
+          "type": "code",
+          "lang": "py",
+          "body": "# Multi-pass review — fixes attention dilution\nlocal = [analyse_one(f) for f in files]        # per-file: full attention each\ncross = integration_pass(local, files)         # cross-file: data flow, consistency\nreport = compile(local, cross)"
+        }
+      ]
+    },
+    {
+      "heading": "1.7 — Session State & Resumption",
+      "body": [
+        {
+          "type": "p",
+          "text": "Three session-management options, each for a distinct purpose:"
+        },
+        {
+          "type": "bullets",
+          "items": [
+            "**--resume <session-name>** — continues a specific named session; the *entire* history (tool results, analyses, reasoning) is restored. Use when prior context is still valid and files haven't changed. Avoid after files change → stale context.",
+            "**fork_session** — creates an independent branch from a shared baseline for *divergent* exploration (e.g. compare two refactoring strategies). Branches don't see each other. Use for divergence, not continuation.",
+            "**Fresh start with summary injection** — a brand-new session with a curated structured summary of prior findings injected; no stale tool results. Use when prior tool results are stale or context has degraded."
+          ]
+        },
+        {
+          "type": "callout",
+          "kind": "key",
+          "text": "Three options, three purposes: **resume = continuation, fork = divergent exploration, fresh start + summary = stale prior results.** Selecting the right one for the scenario is exactly what the exam tests."
+        },
+        {
+          "type": "p",
+          "text": "The **stale context problem** is the central concept: when you `--resume` after modifying files, the old tool results (old file contents) remain in history. The model reasons from that cached data and gives contradictory advice — recommending fixes already made, or referencing code that no longer exists."
+        },
+        {
+          "type": "callout",
+          "kind": "warn",
+          "text": "Simply resuming and asking the agent to re-read changed files is **not** the best answer — the stale results stay in history and can still influence reasoning. The reliable fix is a **fresh start with summary injection** plus **targeted re-analysis** of only the changed files (not a wasteful full re-exploration of the whole codebase). And note: `fork_session` does NOT solve stale context — the fork inherits the stale history."
+        }
+      ]
+    }
+  ],
+  "examFocus": [
+    "Using `stop_reason` (not content-type checks, natural-language parsing, or iteration caps) as the authoritative loop-termination signal.",
+    "Hub-and-spoke: all communication through the coordinator; subagents have fully isolated context and no shared memory.",
+    "Tracing multi-agent failures to their origin — narrow coordinator decomposition and missing structured metadata, not the subagents.",
+    "`Agent`/`Task` in `allowedTools` as the hard gate for spawning subagents; parallel spawning for independent tasks.",
+    "Programmatic enforcement vs prompt-based guidance: money / security / compliance always require deterministic enforcement.",
+    "Hook direction: PostToolUse (normalise, after) vs pre-execution interception (block policy, before).",
+    "Decomposition pattern selection (fixed vs dynamic) and fixing attention dilution with multi-pass architecture.",
+    "Session option selection and avoiding stale context after file changes (fresh start + summary + targeted re-analysis)."
+  ],
+  "quickRef": [
+    "`stop_reason`: `tool_use` → run tools, append results, continue; `end_turn` → stop. The only reliable signal.",
+    "Loop anti-patterns: NL parsing · iteration cap as primary · `content[0].type=='text'` · `tool_choice:'any'`.",
+    "Coordinator owns: dynamic selection, scope partitioning, iterative refinement, centralised routing.",
+    "Subagent isolation: no inherited history, no shared memory — pass everything explicitly in the prompt.",
+    "`allowedTools` must include `Agent` (alias `Task`, renamed in SDK v2.1.63) to spawn subagents.",
+    "Context passing: full findings + content-separated-from-metadata + goals-not-procedures.",
+    "Parallel spawn = multiple Agent calls in one response. fork_session ≠ --resume.",
+    "Enforcement: high-stakes → programmatic gate/hook (100%); low-stakes → prompt (probabilistic).",
+    "Hooks: PostToolUse = normalise after; interception = block before.",
+    "Decomposition: fixed pipeline for predictable, dynamic for open-ended; multi-pass fixes attention dilution.",
+    "Sessions: resume = continue · fork = diverge · fresh+summary = stale results / targeted re-analysis.",
+    "Handoff summary fields: customer ID · summary · root cause · refund amount · recommended action."
+  ]
+}
