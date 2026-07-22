@@ -1,8 +1,12 @@
 import { defineConfig, globalIgnores } from "eslint/config";
-import nextVitals from "eslint-config-next/core-web-vitals";
+import { FlatCompat } from "@eslint/eslintrc";
+
+// eslint-config-next 15.x still ships the old shareable-config ({extends})
+// format rather than a native flat-config array, so it needs FlatCompat.
+const compat = new FlatCompat({ baseDirectory: import.meta.dirname });
 
 const eslintConfig = defineConfig([
-  ...nextVitals,
+  ...compat.extends("next/core-web-vitals"),
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:

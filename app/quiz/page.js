@@ -82,7 +82,6 @@ function QuizPageInner() {
     const qDomain = (searchParams.get("domain") || "").toUpperCase();
     const autostart = searchParams.get("autostart");
     if (autostart && DOMAINS.includes(qDomain) && phase === "picker") {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       startDrill(qDomain);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
