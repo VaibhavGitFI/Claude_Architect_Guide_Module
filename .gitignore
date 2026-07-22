@@ -4,6 +4,12 @@
 /node_modules
 /.pnp
 .pnp.*
+# package-lock.json intentionally not committed: it was generated on macOS
+# and only pins the darwin-arm64 lightningcss (Tailwind v4) native binary,
+# which breaks `npm install` on Catalyst's Linux Slate build container
+# ("Cannot find module '../lightningcss.linux-x64-gnu.node'"). Each
+# environment resolves its own lockfile/native binaries from package.json.
+package-lock.json
 .yarn/*
 !.yarn/patches
 !.yarn/plugins
